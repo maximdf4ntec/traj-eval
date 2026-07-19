@@ -1,30 +1,31 @@
-"""Generic output contract produced by the trajectory compiler.
+"""Behavior Contract — schema v2.
 
-This module defines the envelope and per-rule shape that the compiler emits.
-It is intentionally decoupled from the internal :class:`~trajectory_eval.models.rule.Rule`
-hierarchy (``polarity`` / ``scope`` / ``step_type`` / ``pseudocode``): those
-fields describe *how a rule was derived*, while this contract describes
-*what a downstream validator needs to evaluate it*.
+This module defines the envelope and per-rule shape that the contract compiler
+emits.  It is intentionally decoupled from the internal
+:class:`~trajectory_eval.models.rule.Rule` hierarchy (``polarity`` / ``scope``
+/ ``step_type`` / ``pseudocode``): those fields describe *how a rule was
+derived*, while this contract describes *what a downstream validator needs to
+evaluate it*.
 
-Design principles (see project spec discussion):
+Design principles:
 
 * Every rule registers on the tuple ``(category, kind)``. ``category`` is a
   small, stable, closed vocabulary (:class:`RuleCategory`); ``kind`` is an
   open string because new evaluators are expected to introduce new kinds
   without requiring a schema change here.
-* ``target`` says *what the rule applies to*. Most rules target a single
-  ``(tool, parameter)`` or a ``response``, but some are trajectory-wide or
-  span multiple steps/entities, so :class:`RuleTarget` accepts a small set
-  of well-known optional fields and allows arbitrary extra keys for future
-  target shapes.
+* ``target`` says *what the rule applies to* using abstract identifiers —
+  tool names, parameter keys, tool-pair tuples, entity values, or
+  trajectory-wide scope.  **No step indices.** Rules are expressed in terms
+  that remain valid across trajectory variations that differ only in step
+  ordering.
 * ``constraint`` is always rule-specific and opaque at this layer: the
-  contract does not attempt to validate its internal shape. Only the
+  contract does not attempt to validate its internal shape.  Only the
   concrete evaluator registered for a given ``(category, kind)`` knows how
   to read it.
 * ``metadata`` is deliberately minimal: ``confidence`` and ``support`` only.
-
-Splitting this single ``rules`` list into the two future compiler artifacts
-(Behavior Contract vs. Execution Report) is out of scope here.
+* ``cardinality`` specifies quantification: does the constraint hold for
+  *every* instance of the target (``all``), *at least one* (``any``), or
+  *exactly one specific* instance (``single``).
 """
 
 from __future__ import annotations
@@ -58,8 +59,23 @@ class RuleCategory(str, Enum):
     termination = "termination"
 
 
+class RuleCardinality(str, Enum):
+    """How many instances of the target the rule applies to.
+
+    Attributes:
+        all: Rule must hold for EVERY instance of the target.
+        any: Rule must hold for AT LEAST ONE instance of the target.
+        single: Rule applies to exactly one specific instance
+            (e.g., the first or last occurrence).
+    """
+
+    all = "all"
+    any = "any"
+    single = "single"
+
+
 class RuleTarget(BaseModel):
-    """What a rule applies to.
+    """Abstract target — NO step indices.
 
     All fields are optional; a given rule populates only the ones relevant
     to its own ``(category, kind)``. Extra keys not listed here are allowed
@@ -72,10 +88,7 @@ class RuleTarget(BaseModel):
         response: Marks the target as an assistant/LLM response
             (e.g. ``"assistant"``).
         scope: Set to ``"trajectory"`` when the rule applies to the
-            trajectory as a whole (e.g. redundancy rate).
-        step_index: A single specific step, when relevant.
-        step_range: An inclusive ``(start, end)`` step index range, for
-            rules spanning a window of steps.
+            trajectory as a whole (e.g. terminal state).
         tool_pair: A ``(tool_a, tool_b)`` pair, for rules about ordering or
             dependency between two tools.
         entity: A specific extracted entity (e.g. a file path or hash) the
@@ -88,8 +101,6 @@ class RuleTarget(BaseModel):
     parameter: Optional[str] = None
     response: Optional[str] = None
     scope: Optional[Literal["trajectory"]] = None
-    step_index: Optional[int] = None
-    step_range: Optional[tuple[int, int]] = None
     tool_pair: Optional[tuple[str, str]] = None
     entity: Optional[str] = None
 
@@ -109,16 +120,18 @@ class RuleMetadata(BaseModel):
 
 
 class CompiledRule(BaseModel):
-    """A single rule in the compiler output contract.
+    """A single rule in the Behavior Contract.
 
     Attributes:
         id: Unique identifier for this rule (e.g. ``"rule_001"``).
         category: Closed top-level classification, see :class:`RuleCategory`.
         kind: Open-ended sub-classification within ``category``; each
             evaluator registers on the ``(category, kind)`` pair.
-        target: What this rule applies to.
+        target: What this rule applies to (abstract, no step indices).
         constraint: Rule-specific check parameters. Opaque at this layer —
             only the evaluator registered for ``(category, kind)`` reads it.
+        cardinality: Quantification — does the constraint hold for every
+            instance of the target, at least one, or exactly one.
         metadata: Confidence/support metadata.
     """
 
@@ -127,6 +140,7 @@ class CompiledRule(BaseModel):
     kind: str
     target: RuleTarget
     constraint: dict[str, Any]
+    cardinality: RuleCardinality
     metadata: RuleMetadata
 
 
@@ -161,17 +175,46 @@ class Evidence(BaseModel):
     generated_from: EvidenceSource
 
 
-class TrajectoryContract(BaseModel):
-    """Top-level envelope emitted by the trajectory compiler.
+class BehaviorContract(BaseModel):
+    """Top-level contract envelope — schema version 2.
+
+    Contains deterministic, step-agnostic invariants suitable for regression
+    testing and runtime validation.
 
     Attributes:
-        schema_version: Contract schema version; bump on breaking changes.
+        schema_version: Contract schema version; always ``2`` for this format.
         generator: Identifies the compiler that produced this output.
         evidence: What the rules were compiled from.
-        rules: The compiled rules.
+        rules: The compiled rules (deduplicated global invariants).
     """
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     generator: GeneratorInfo = Field(default_factory=GeneratorInfo)
     evidence: Evidence
     rules: list[CompiledRule]
+
+
+class ContractParseError(Exception):
+    """Raised when contract JSON cannot be parsed or validated."""
+
+    pass
+
+
+def parse_contract(json_str: str) -> BehaviorContract:
+    """Parse and validate a JSON string into a BehaviorContract.
+
+    Wraps Pydantic's model_validate_json with a domain-specific error.
+
+    Args:
+        json_str: A JSON string representing a BehaviorContract.
+
+    Returns:
+        A validated BehaviorContract instance.
+
+    Raises:
+        ContractParseError: When the JSON is invalid or doesn't conform to schema.
+    """
+    try:
+        return BehaviorContract.model_validate_json(json_str)
+    except Exception as e:
+        raise ContractParseError(str(e)) from e

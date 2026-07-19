@@ -11,8 +11,7 @@ Trajectory-level rules (a–g):
     TokenEfficiencyRule     — Rule f
     MutationMatcherRule     — Rule g
 
-Per-step rules (h–i):
-    ToolIndexRule           — Rule i
+Per-step rules (h):
     ToolParamCountRule      — Rule h (count)
     ToolParamTypeRule       — Rule h (type)
 """
@@ -25,7 +24,6 @@ from trajectory_eval.generator.rules.cycle_breaker import CycleBreakRule
 from trajectory_eval.generator.rules.token_efficiency import TokenEfficiencyRule
 from trajectory_eval.generator.rules.mutation_matcher import MutationMatcherRule
 from trajectory_eval.generator.rules.tool_checks import (
-    ToolIndexRule,
     ToolParamCountRule,
     ToolParamTypeRule,
 )
@@ -42,7 +40,6 @@ __all__ = [
     "CycleBreakRule",
     "TokenEfficiencyRule",
     "MutationMatcherRule",
-    "ToolIndexRule",
     "ToolParamCountRule",
     "ToolParamTypeRule",
     "TerminalStateRule",

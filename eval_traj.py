@@ -1,4 +1,4 @@
-"""CLI entry point for the Trajectory Evaluation System MVP.
+"""CLI entry point for the Trajectory Evaluation System.
 
 Usage
 -----
@@ -6,20 +6,15 @@ Usage
 
 Output
 ------
-A JSON array printed to stdout.  Each element is a serialised
-:class:`~trajectory_eval.models.rule.Rule` dict with keys::
+A JSON object printed to stdout containing both artifacts:
 
     {
-      "id":               "<step_type>_<step_index>_<seq>",
-      "step_index":       <int | null>,
-      "rule_type":        "hard" | "soft",
-      "polarity":         "positive" | "negative",
-      "scope":            "step" | "frame" | "global",
-      "step_type":        "tool_call" | "tool_result" | "llm_response" | ...,
-      "confidence":       "high" | "medium" | "low",
-      "rule_description": "<plain English>",
-      "pseudocode":       "<human-readable logic>"
-    }"
+      "contract": { ... BehaviorContract schema v2 ... },
+      "report":   { ... ExecutionReport ... }
+    }
+
+The contract contains step-agnostic, deduplicated invariants.
+The report contains metrics observations and inconsistency flags.
 
 Environment variables (all optional — LLM calls are skipped gracefully on failure)
 -----------------------------------------------------------------------------------
@@ -64,16 +59,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from trajectory_eval.generator.hard_rules import (
-    generate_global_hard_rules,
-    tool_call_rules,
-)
-from trajectory_eval.generator.soft_rules import (
-    generate_llm_response_soft_rule,
-    generate_tool_result_soft_rules,
-)
+from trajectory_eval.generator.hard_rules import compile_contract
 from trajectory_eval.llm.azure_client import AzureFoundryClient
-from trajectory_eval.models.rule import Rule
 from trajectory_eval.models.trajectory import Step, StepType, Trajectory
 from trajectory_eval.parsers.swe_bench import parse_swe_bench
 
@@ -157,15 +144,14 @@ def _find_preceding_tool_call(
     return None
 
 
-async def evaluate(traj_path: str) -> list[Rule]:
-    """Parse the trajectory and generate all rules.
+async def evaluate(traj_path: str) -> dict:
+    """Parse the trajectory and compile the behavior contract + execution report.
 
     Args:
         traj_path: Path to the ``.traj`` file.
 
     Returns:
-        Ordered list of :class:`~trajectory_eval.models.rule.Rule` instances
-        (hard rules first, then soft rules, per step).
+        Dict with 'contract' and 'report' keys, each JSON-serializable.
     """
     trajectory = parse_swe_bench(traj_path)
 
@@ -173,32 +159,14 @@ async def evaluate(traj_path: str) -> list[Rule]:
     print(_format_trajectory(trajectory), file=sys.stderr)
 
     llm_client = AzureFoundryClient()
-    all_rules: list[Rule] = []
 
-    # Trajectory-level hard rules (a–g).
-    all_rules.extend(
-        await generate_global_hard_rules(trajectory, embed_client=llm_client)
-    )
+    # Compile trajectory into BehaviorContract + ExecutionReport.
+    output = await compile_contract(trajectory, embed_client=llm_client)
 
-    for step in trajectory.steps:
-        if step.step_type == StepType.tool_call:
-            # Per-step hard rules h (param types) and i (tool index).
-            all_rules.extend(tool_call_rules(step))
-
-        # elif step.step_type == StepType.tool_result:
-        #     # Soft rules (combined tool-pair LLM call).
-        #     tool_call_step = _find_preceding_tool_call(trajectory, step.index)
-        #     if tool_call_step is not None:
-        #         soft = await generate_tool_result_soft_rules(
-        #             trajectory, tool_call_step, step, llm_client
-        #         )
-        #         all_rules.extend(soft)
-
-        # elif step.step_type == StepType.llm_response:
-        #     # Hard-coded soft rule — no LLM call.
-        #     all_rules.append(generate_llm_response_soft_rule(step))
-
-    return all_rules
+    return {
+        "contract": output.contract.model_dump(mode="json", exclude_none=True),
+        "report": output.report.model_dump(mode="json", exclude_none=True),
+    }
 
 
 def main() -> None:
@@ -213,7 +181,7 @@ def main() -> None:
     traj_path = sys.argv[1]
 
     try:
-        rules = asyncio.run(evaluate(traj_path))
+        result = asyncio.run(evaluate(traj_path))
     except FileNotFoundError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -221,11 +189,7 @@ def main() -> None:
         print(f"Parse error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    print(
-        json.dumps(
-            [r.model_dump(mode="json") for r in rules], indent=2, ensure_ascii=False
-        )
-    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

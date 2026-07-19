@@ -1,14 +1,22 @@
 """Models package."""
 
 from trajectory_eval.models.contract import (
+    BehaviorContract,
     CompiledRule,
+    ContractParseError,
     Evidence,
     EvidenceSource,
     GeneratorInfo,
+    RuleCardinality,
     RuleCategory,
     RuleMetadata,
     RuleTarget,
-    TrajectoryContract,
+    parse_contract,
+)
+from trajectory_eval.models.execution_report import (
+    ExecutionReport,
+    InconsistencyFlag,
+    MetricObservation,
 )
 from trajectory_eval.models.rule import (
     ConfidenceLevel,
@@ -30,12 +38,18 @@ __all__ = [
     "RulePolarity",
     "RuleScope",
     "ConfidenceLevel",
-    "TrajectoryContract",
+    "BehaviorContract",
     "CompiledRule",
+    "RuleCardinality",
     "RuleCategory",
     "RuleTarget",
     "RuleMetadata",
     "GeneratorInfo",
     "Evidence",
     "EvidenceSource",
+    "ExecutionReport",
+    "MetricObservation",
+    "InconsistencyFlag",
+    "ContractParseError",
+    "parse_contract",
 ]

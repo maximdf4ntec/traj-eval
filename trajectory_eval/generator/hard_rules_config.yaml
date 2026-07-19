@@ -4,15 +4,11 @@
 #
 # Rules are organized by scope:
 #   trajectory_rules: run via HardRuleRunner.run() — keys must match _REGISTRY
-#   per_step_rules: run via tool_call_rules(step) in hard_rules.py
+#   per_step_rules: (deprecated — empty; retained for backward compat)
 #
 # For trajectory rules:
 #   enabled: false to skip a rule entirely.
 #   All other keys are passed as **kwargs to the rule's from_trajectory classmethod.
-#
-# For per-step rules:
-#   enabled: false to skip a rule entirely.
-#   Note: no config parameters — they're driven by Step data.
 
 failure_keywords:
   - error
@@ -36,11 +32,17 @@ trajectory_rules:
     stagnation_threshold: 0.95
     prior_steps_window: 2
 
-  tool_sequence:
-    enabled: true
-
   data_dependency:
     enabled: true
+
+  tool_sequence:
+    enabled: true
+    confidence_threshold: 3
+    powerful_couples:
+      - [create_file, write_file]
+      - [read_file, str_replace]
+      - [list_directory, read_file]
+      - [execute_command, read_output]
 
   cycle_breaker:
     enabled: true
@@ -69,7 +71,16 @@ trajectory_rules:
       - all tests pass
       - implemented
       - applied
+      - submit
       - submitted
+
+  tool_param_count:
+    enabled: true
+    description: "Tool must receive exactly the observed number of parameters"
+
+  tool_param_type:
+    enabled: true
+    description: "Each parameter must have the expected Python type"
 
   # Rule k — Tool Result Output Type Validation
   # Detects structured types (JSON, XML, Python, number) in tool_result outputs
@@ -90,16 +101,5 @@ trajectory_rules:
     enabled: true
     context_window: 10
 
-per_step_rules:
-  tool_index:
-    enabled: true
-    description: "Tool name at each trajectory position must be constant"
-
-  tool_param_count:
-    enabled: true
-    description: "Tool must receive exactly the observed number of parameters"
-
-  tool_param_type:
-    enabled: true
-    description: "Each parameter must have the expected Python type"
+per_step_rules: {}
 

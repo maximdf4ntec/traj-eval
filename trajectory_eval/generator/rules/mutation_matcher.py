@@ -55,6 +55,7 @@ class MutationMatcherRule(HardRule):
     failure_step: int
     failed_call_step: int
     adapted: bool
+    failed_tool_name: str = ""
 
     # Class-level defaults.
     polarity: RulePolarity = RulePolarity.negative
@@ -148,6 +149,7 @@ class MutationMatcherRule(HardRule):
                     failure_step=step.index,
                     failed_call_step=call_before.index,
                     adapted=not identical,
+                    failed_tool_name=call_before.tool_name or "",
                 )
             )
 

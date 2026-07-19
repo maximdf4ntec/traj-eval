@@ -42,7 +42,6 @@ from trajectory_eval.generator.rules import (
     RedundancyRateRule,
     TokenEfficiencyRule,
     ToolSequenceRule,
-    ToolIndexRule,
     ToolParamCountRule,
     ToolParamTypeRule,
     TerminalStateRule,
@@ -67,6 +66,8 @@ _REGISTRY: dict[str, type] = {
     "token_efficiency": TokenEfficiencyRule,
     "mutation_matcher": MutationMatcherRule,
     "terminal_state": TerminalStateRule,
+    "tool_param_count": ToolParamCountRule,
+    "tool_param_type": ToolParamTypeRule,
     "tool_result_type": ToolResultTypeRule,
     "llm_response_format": LlmResponseFormatRule,
     "llm_grounding": LlmGroundingRule,
@@ -108,6 +109,12 @@ class HardRuleRunner:
         failure_keywords: list[str] = self._config.get("failure_keywords", [])
         all_rules: list[HardRule] = []
 
+        # Keys that are YAML-only metadata and should NOT be passed as kwargs.
+        _META_KEYS = {"enabled", "description"}
+
+        # Track data_dependency rules so we can inject them into tool_sequence.
+        data_dependency_rules: list[HardRule] = []
+
         for rule_name, rule_cfg in rules_config.items():
             if not rule_cfg.get("enabled", True):
                 continue
@@ -117,14 +124,16 @@ class HardRuleRunner:
                 _log.warning("HardRuleRunner: unknown rule '%s', skipping.", rule_name)
                 continue
 
-            # Build kwargs from config, excluding the 'enabled' flag.
-            params = {k: v for k, v in rule_cfg.items() if k != "enabled"}
+            # Build kwargs from config, excluding meta keys.
+            params = {k: v for k, v in rule_cfg.items() if k not in _META_KEYS}
 
             # Inject special context where needed.
             if rule_name == "monotonic_progress":
                 params["embed_client"] = embed_client
             if rule_name == "mutation_matcher" and failure_keywords:
                 params["failure_keywords"] = failure_keywords
+            if rule_name == "tool_sequence":
+                params["data_dependency_rules"] = data_dependency_rules
 
             try:
                 factory = cls.from_trajectory
@@ -133,6 +142,10 @@ class HardRuleRunner:
                 else:
                     instances = factory(trajectory, **params)
                 all_rules.extend(instances)
+
+                # Store data_dependency rules for downstream injection.
+                if rule_name == "data_dependency":
+                    data_dependency_rules = list(instances)
             except (
                 Exception
             ) as exc:  # noqa: BLE001 — one rule failure must not stop others

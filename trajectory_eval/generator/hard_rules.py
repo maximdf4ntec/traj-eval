@@ -9,24 +9,21 @@ Exported functions
 generate_global_hard_rules(trajectory, embed_client, config_path)
     Trajectory-level rules a–g, driven by YAML config.
 
-tool_call_rules(step)
-    Per-step rules h (parameter count + types) and i (tool index).
+compile_contract(trajectory, embed_client, config_path)
+    Single entry point producing both BehaviorContract and ExecutionReport.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from trajectory_eval.llm.azure_client import AzureFoundryClient
 from trajectory_eval.models.rule import HardRule
-from trajectory_eval.models.trajectory import Step
 from trajectory_eval.generator.rule_runner import HardRuleRunner
-from trajectory_eval.generator.rules import (
-    ToolIndexRule,
-    ToolParamCountRule,
-    ToolParamTypeRule,
-)
+
+if TYPE_CHECKING:
+    from trajectory_eval.generator.contract_compiler import CompilerOutput
 
 
 async def generate_global_hard_rules(
@@ -53,23 +50,27 @@ async def generate_global_hard_rules(
     return await runner.run(trajectory, embed_client=embed_client)
 
 
-def tool_call_rules(step: Step) -> list[HardRule]:
-    """Generate per-step hard rules h (parameter types) and i (tool index).
+async def compile_contract(
+    trajectory,
+    embed_client: Optional[AzureFoundryClient] = None,
+    config_path: Optional[Path] = None,
+) -> "CompilerOutput":
+    """Compile a trajectory into a Behavior Contract and Execution Report.
+
+    Single entry point producing both artifacts. Delegates to ContractCompiler.
 
     Args:
-        step: A Step of type ``tool_call``.
+        trajectory: The full trajectory to compile.
+        embed_client: Optional Azure Foundry client for embedding-based rules.
+        config_path: Override path for the YAML config. Falls back to bundled default.
 
     Returns:
-        A list of HardRule instances: one ToolIndexRule plus, for each
-        parameter, a ToolParamCountRule and one ToolParamTypeRule.
+        CompilerOutput containing both BehaviorContract and ExecutionReport.
     """
-    rules: list[HardRule] = [ToolIndexRule.from_step(step)]
+    from trajectory_eval.generator.contract_compiler import (
+        ContractCompiler,
+        CompilerOutput,
+    )  # noqa: F811
 
-    if not step.tool_input:
-        return rules
-
-    rules.append(ToolParamCountRule.from_step(step))
-    for key, val in step.tool_input.items():
-        rules.append(ToolParamTypeRule.from_step(step, param_key=key, param_value=val))
-
-    return rules
+    compiler = ContractCompiler(config_path=config_path)
+    return await compiler.compile(trajectory, embed_client=embed_client)

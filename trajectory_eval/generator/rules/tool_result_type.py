@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import xml.etree.ElementTree as ET
 from enum import Enum
 from typing import Optional
@@ -57,12 +58,16 @@ class OutputType(str, Enum):
         xml: Valid XML document.
         python: Valid Python source code with at least one Python keyword.
         number: A single numeric value (int or float).
+        file_path: One or more file system paths (Unix or Windows).
+        plain_text: Unstructured text output (default).
     """
 
     json = "json"
     xml = "xml"
     python = "python"
     number = "number"
+    file_path = "file_path"
+    plain_text = "plain_text"
 
 
 def _is_valid_json(text: str) -> bool:
@@ -112,6 +117,35 @@ def _is_number(text: str) -> bool:
         return False
 
 
+# Pattern for Unix absolute paths with extension.
+_RE_FILE_PATH = re.compile(r"^(/[a-zA-Z0-9_./-]+\.[a-zA-Z]{1,10}\s*)+$")
+
+
+def _is_file_path_output(text: str) -> bool:
+    """Return True when text consists of one or more file paths (one per line).
+
+    Detects outputs like:
+        /testbed/boltons/tableutils.py
+    or multi-line:
+        /testbed/file1.py
+        /testbed/file2.py
+    """
+    stripped = text.strip()
+    if not stripped:
+        return False
+    lines = [l.strip() for l in stripped.splitlines() if l.strip()]
+    if not lines:
+        return False
+    # All non-empty lines must look like file paths.
+    for line in lines:
+        if not (line.startswith("/") or re.match(r"^[A-Za-z]:\\", line)):
+            return False
+        # Must contain at least one path separator and an extension-like suffix.
+        if "/" not in line and "\\" not in line:
+            return False
+    return True
+
+
 def _detect_output_type(
     tool_name: str,
     content: str,
@@ -146,6 +180,8 @@ def _detect_output_type(
         return OutputType.python, "content_detection"
     if _is_number(content_stripped):
         return OutputType.number, "content_detection"
+    if _is_file_path_output(content_stripped):
+        return OutputType.file_path, "content_detection"
 
     return None  # plain text — skip
 
@@ -155,6 +191,7 @@ _VALIDATORS: dict[OutputType, "Callable[[str], bool]"] = {  # type: ignore[name-
     OutputType.xml: _is_valid_xml,
     OutputType.python: _is_valid_python,
     OutputType.number: _is_number,
+    OutputType.file_path: _is_file_path_output,
 }
 
 
