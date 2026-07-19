@@ -1,10 +1,7 @@
-<!-- Based on/adapted from:
-     https://github.com/mattpocock/skills/blob/main/skills/engineering/codebase-design/SKILL.md (deep-module design discipline)
-     Front-loads the checks already defined in code-reviewer, tdd, python-packaging, and domain-modeling,
-     so they're applied while code is generated rather than only caught afterward. -->
 ---
 name: code-writer
-description: Standards to apply while writing or generating new implementation code — not for reviewing existing code. Activates whenever the user asks to implement a feature, add a function, fix a bug, or otherwise write new Python code for trajectory-to-tests.
+description: >
+ Standards to apply while writing or generating new implementation code — not for reviewing existing code. Activates whenever the user asks to implement a feature, add a function, fix a bug, or otherwise write new Python code for trajectory-to-tests.
 ---
 
 # Code Writer Skill

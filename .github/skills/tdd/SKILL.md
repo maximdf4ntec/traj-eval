@@ -1,8 +1,7 @@
-<!-- Based on/adapted from:
-     https://github.com/mattpocock/skills/blob/main/skills/engineering/tdd/SKILL.md -->
 ---
 name: tdd
-description: Test-driven development with a red-green-refactor loop for Python/pytest. Builds features or fixes bugs one vertical slice at a time. Activates when the user asks to implement a feature, fix a bug, or says "let's TDD this".
+description: >
+  Test-driven development with a red-green-refactor loop for Python/pytest. Builds features or fixes bugs one vertical slice at a time. Activates when the user asks to implement a feature, fix a bug, or says "let's TDD this".
 ---
 
 # TDD Skill

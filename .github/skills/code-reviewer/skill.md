@@ -1,10 +1,8 @@
-<!-- Based on/adapted from:
-     https://github.com/mattpocock/skills/blob/main/skills/engineering/code-review/SKILL.md (two-axis Standards+Spec review)
-     https://github.com/github/awesome-copilot/blob/main/skills/pytest-coverage/SKILL.md (coverage-gap loop, invoked from Testing axis)
-     Extends the user's original code-reviewer skill with a second axis and Python/security specifics. -->
 ---
 name: code-reviewer
-description: Two-axis review (Standards + Spec) of implementation code for correctness, security, performance, and adherence to the design. Activates when the user provides a code block, a file path, a diff, or says "review this", "review since <ref>", or "review this PR".
+description: >
+  Two-axis review (Standards + Spec) of implementation code for correctness, security, performance, and adherence to the design. 
+  Activates when the user provides a code block, a file path, a diff, or says "review this", "review since <ref>", or "review this PR".
 ---
 
 # Code Reviewer Skill

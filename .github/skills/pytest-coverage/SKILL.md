@@ -1,8 +1,7 @@
-<!-- Based on/adapted from:
-     https://github.com/github/awesome-copilot/blob/main/skills/pytest-coverage/SKILL.md -->
 ---
 name: pytest-coverage
-description: Run pytest with coverage, find lines missing coverage, and close the gaps with real tests. Activates when the user asks to check/increase test coverage, or as a step within the code-reviewer skill's Testing check.
+description: >
+  Run pytest with coverage, find lines missing coverage, and close the gaps with real tests. Activates when the user asks to check/increase test coverage, or as a step within the code-reviewer skill's Testing check.
 ---
 
 # Pytest Coverage Skill

@@ -283,7 +283,33 @@ The Trajectory Evaluation System is a tool for analyzing LLM agent execution tra
 
 
 #### Open questions / comments
-3. Rename Rule type "Hard" -> "Assertion", "Soft" -> "Eval"
-5. Support for hierarchical trajectories - future.
-6. Automatic trajectory mutations - future. 
-10. How to run a YAML file on a right trajectory - future
+1. New hard rules: 
+    a. Trajectory Edit Distance
+    b. Tool Invocation Redundancy Ratio $$\text{Redundancy Rate} = \frac{\text{Duplicate Tool Calls}}{\text{Total Tool Calls}}$$
+    c. Tool sequence "Tool B cannot be called unless Tool A was successfully executed first"
+    d. Step-to-Step Data Dependency (Lineage Validation) - assert that a variable used in Step $N$ was born in the observation of Step $N-1$ (or earlier).
+    e. Multi-Turn Cycle Breaker - This assertion ensures that the agent does not repeat identical behaviors within a short cognitive horizon.
+    f. Token-to-Step Efficiency Ceiling - This catches prompt injection or context stuffing where the agent's thought blocks grow exponentially longer each turn.
+    g. Environment Mutation Matcher - If a tool observation explicitly reports a failure or an empty state, the agent's subsequent choices must adapt. (def test_empty_observation_handling(trajectory):
+    for i, step in enumerate(trajectory[:-1]):
+        if "error" in str(step['observation']).lower() or "not found" in str(step['observation']).lower():
+            next_step = trajectory[i+1]
+            # The agent must pivot to error handling, not try to continue reading
+            assert next_step['action'] != step['action'], f"Agent ignored error state in step {i} and retried blindly.")
+    h. Tools parameters (count and type)
+    i. Tool index in trajectory (as today)
+
+2. Rename Rule type "Hard" -> "Assertion", "Soft" -> "Eval"
+3. Split between succeesful trajectories and failed ones
+4. Support for "golden path"
+5. Guardrail Evasion - future
+6. Support for hierarchical trajectories - future.
+7. Automatic trajectory mutations - future.
+8. Semantic Anchor Grounding - LLM-as-a-Judge Eval. Your compiler extracts the intent of the user's prompt (e.g., "Summarize risks") and maps it to the tools used, generating a dynamic rubric for an LLM Judge, rather than a hardcoded string match. 
+9. Support langfuse trajectory evaluation and langfuse datasets (https://langfuse.com/guides/cookbook/example_pydantic_ai_mcp_agent_evaluation)
+10. In addition to tests, provide trajectory analysis - spot errors, loops, ...
+11. How to run a YAML file on a right trajectory - future
+12. Tools result injection - future
+13. Test set completeness verification procedure - future
+14. Ask generalization questions (i.e. what is expected result of this tool, or is this tool necessary)
+15. 

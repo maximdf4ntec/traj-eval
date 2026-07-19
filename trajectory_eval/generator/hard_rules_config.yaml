@@ -1,0 +1,105 @@
+# Hard rule evaluation configuration
+# ------------------------------------
+# failure_keywords: used by MutationMatcherRule to detect failed steps.
+#
+# Rules are organized by scope:
+#   trajectory_rules: run via HardRuleRunner.run() — keys must match _REGISTRY
+#   per_step_rules: run via tool_call_rules(step) in hard_rules.py
+#
+# For trajectory rules:
+#   enabled: false to skip a rule entirely.
+#   All other keys are passed as **kwargs to the rule's from_trajectory classmethod.
+#
+# For per-step rules:
+#   enabled: false to skip a rule entirely.
+#   Note: no config parameters — they're driven by Step data.
+
+failure_keywords:
+  - error
+  - exception
+  - failed
+  - traceback
+  - stderr
+  - errno
+  - no such file
+  - permission denied
+  - timeout
+  - not found
+
+trajectory_rules:
+  redundancy_rate:
+    enabled: true
+    max_rate: 0.25
+
+  monotonic_progress:
+    enabled: true
+    stagnation_threshold: 0.95
+    prior_steps_window: 2
+
+  tool_sequence:
+    enabled: true
+
+  data_dependency:
+    enabled: true
+
+  cycle_breaker:
+    enabled: true
+    horizon: 5
+
+  token_efficiency:
+    enabled: true
+    max_growth_ratio: 2.0
+
+  mutation_matcher:
+    enabled: true
+
+  # Rule j — Terminal State Check
+  # The last non-error step must contain at least one completion keyword.
+  terminal_state:
+    enabled: true
+    completion_keywords:
+      - done
+      - complete
+      - completed
+      - finished
+      - fixed
+      - resolved
+      - success
+      - successfully
+      - all tests pass
+      - implemented
+      - applied
+      - submitted
+
+  # Rule k — Tool Result Output Type Validation
+  # Detects structured types (JSON, XML, Python, number) in tool_result outputs
+  # and asserts they remain valid.  No configurable parameters.
+  tool_result_type:
+    enabled: true
+
+  # Rule l — LLM Response Format / Schema Conformance
+  # When the preceding user message requests JSON / YAML / XML output, the
+  # llm_response must parse cleanly for that format.
+  llm_response_format:
+    enabled: true
+
+  # Rule m — LLM Response Grounding / Referential Integrity
+  # Entity references (file paths, #IDs, commit SHAs, backtick identifiers) in
+  # llm_response steps must appear in the N most-recent tool_result outputs.
+  llm_grounding:
+    enabled: true
+    context_window: 10
+
+per_step_rules:
+  tool_index:
+    enabled: true
+    description: "Tool name at each trajectory position must be constant"
+
+  tool_param_count:
+    enabled: true
+    description: "Tool must receive exactly the observed number of parameters"
+
+  tool_param_type:
+    enabled: true
+    description: "Each parameter must have the expected Python type"
+
