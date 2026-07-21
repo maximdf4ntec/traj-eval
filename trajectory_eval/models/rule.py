@@ -59,11 +59,14 @@ class ConfidenceLevel(str, Enum):
         high: Derived directly from trajectory data; almost always correct.
         medium: Heuristic or LLM-derived; generally reliable.
         low: Weakly supported; treat as a hint.
+        potential: Type-based heuristic match; indicates possible but
+            unconfirmed data flow.
     """
 
     high = "high"
     medium = "medium"
     low = "low"
+    potential = "potential"
 
 
 class Rule(BaseModel, ABC):

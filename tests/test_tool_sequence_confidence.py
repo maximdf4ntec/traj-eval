@@ -16,9 +16,19 @@ from trajectory_eval.generator.rules.tool_sequence import (
     _is_inconsistent,
 )
 from trajectory_eval.models.rule import ConfidenceLevel, RulePolarity
+from trajectory_eval.models.tool import ParameterType, Tool, ToolParameter
 from trajectory_eval.models.trajectory import Step, StepType, Trajectory
 
 NOW = datetime.now(tz=timezone.utc)
+
+
+def _tool(name: str, **params) -> Tool:
+    """Build a simple Tool with plain_text parameters."""
+    inputs = [
+        ToolParameter(key=k, raw_value=v, detected_type=ParameterType.plain_text)
+        for k, v in params.items()
+    ]
+    return Tool(name=name, inputs=inputs)
 
 
 # ---------------------------------------------------------------------------
@@ -211,9 +221,9 @@ class TestFromTrajectory:
     def test_suppresses_below_threshold(self):
         """Req 9.8: Single observation, no signals → no rules emitted."""
         steps = [
-            _make_step(0, StepType.tool_call, tool_name="tool_a", tool_input={"x": 1}),
-            _make_step(1, StepType.tool_result, tool_output="ok"),
-            _make_step(2, StepType.tool_call, tool_name="tool_b", tool_input={"y": 2}),
+            _make_step(0, StepType.tool_call, tool=_tool("tool_a", x=1)),
+            _make_step(1, StepType.tool_result, tool=Tool(name="tool_a", output="ok")),
+            _make_step(2, StepType.tool_call, tool=_tool("tool_b", y=2)),
         ]
         trajectory = Trajectory(id="test", steps=steps)
         rules = ToolSequenceRule.from_trajectory(
@@ -224,13 +234,11 @@ class TestFromTrajectory:
     def test_emits_for_powerful_couple(self):
         """Req 9.6: Powerful couple pair → emits with high confidence."""
         steps = [
+            _make_step(0, StepType.tool_call, tool=_tool("read_file", p="x")),
             _make_step(
-                0, StepType.tool_call, tool_name="read_file", tool_input={"p": "x"}
+                1, StepType.tool_result, tool=Tool(name="read_file", output="content")
             ),
-            _make_step(1, StepType.tool_result, tool_output="content"),
-            _make_step(
-                2, StepType.tool_call, tool_name="str_replace", tool_input={"o": "a"}
-            ),
+            _make_step(2, StepType.tool_call, tool=_tool("str_replace", o="a")),
         ]
         trajectory = Trajectory(id="test", steps=steps)
         rules = ToolSequenceRule.from_trajectory(
@@ -253,15 +261,17 @@ class TestFromTrajectory:
                     _make_step(
                         base,
                         StepType.tool_call,
-                        tool_name="tool_a",
-                        tool_input={"x": 1},
+                        tool=_tool("tool_a", x=1),
                     ),
-                    _make_step(base + 1, StepType.tool_result, tool_output="success"),
+                    _make_step(
+                        base + 1,
+                        StepType.tool_result,
+                        tool=Tool(name="tool_a", output="success"),
+                    ),
                     _make_step(
                         base + 2,
                         StepType.tool_call,
-                        tool_name="tool_b",
-                        tool_input={"y": 2},
+                        tool=_tool("tool_b", y=2),
                     ),
                 ]
             )
@@ -278,12 +288,20 @@ class TestFromTrajectory:
         """Req 9.9: Inconsistent pattern → no rules emitted."""
         # All observations have A failing → inconsistent (no positive signal)
         steps = [
-            _make_step(0, StepType.tool_call, tool_name="tool_a", tool_input={"x": 1}),
-            _make_step(1, StepType.tool_result, tool_output="error: something failed"),
-            _make_step(2, StepType.tool_call, tool_name="tool_b", tool_input={"y": 2}),
-            _make_step(3, StepType.tool_call, tool_name="tool_a", tool_input={"x": 1}),
-            _make_step(4, StepType.tool_result, tool_output="exception occurred"),
-            _make_step(5, StepType.tool_call, tool_name="tool_b", tool_input={"y": 2}),
+            _make_step(0, StepType.tool_call, tool=_tool("tool_a", x=1)),
+            _make_step(
+                1,
+                StepType.tool_result,
+                tool=Tool(name="tool_a", output="error: something failed"),
+            ),
+            _make_step(2, StepType.tool_call, tool=_tool("tool_b", y=2)),
+            _make_step(3, StepType.tool_call, tool=_tool("tool_a", x=1)),
+            _make_step(
+                4,
+                StepType.tool_result,
+                tool=Tool(name="tool_a", output="exception occurred"),
+            ),
+            _make_step(5, StepType.tool_call, tool=_tool("tool_b", y=2)),
         ]
         trajectory = Trajectory(id="test", steps=steps)
         rules = ToolSequenceRule.from_trajectory(
@@ -296,13 +314,11 @@ class TestFromTrajectory:
     def test_yaml_list_format_for_powerful_couples(self):
         """YAML config passes list-of-lists; should be handled gracefully."""
         steps = [
+            _make_step(0, StepType.tool_call, tool=_tool("read_file", p="x")),
             _make_step(
-                0, StepType.tool_call, tool_name="read_file", tool_input={"p": "x"}
+                1, StepType.tool_result, tool=Tool(name="read_file", output="content")
             ),
-            _make_step(1, StepType.tool_result, tool_output="content"),
-            _make_step(
-                2, StepType.tool_call, tool_name="str_replace", tool_input={"o": "a"}
-            ),
+            _make_step(2, StepType.tool_call, tool=_tool("str_replace", o="a")),
         ]
         trajectory = Trajectory(id="test", steps=steps)
         rules = ToolSequenceRule.from_trajectory(
@@ -322,26 +338,24 @@ class TestFromTrajectory:
             base = i * 3
             steps.extend(
                 [
+                    _make_step(base, StepType.tool_call, tool=_tool("a", x=1)),
                     _make_step(
-                        base, StepType.tool_call, tool_name="a", tool_input={"x": 1}
+                        base + 1, StepType.tool_result, tool=Tool(name="a", output="ok")
                     ),
-                    _make_step(base + 1, StepType.tool_result, tool_output="ok"),
-                    _make_step(
-                        base + 2, StepType.tool_call, tool_name="b", tool_input={"y": 2}
-                    ),
+                    _make_step(base + 2, StepType.tool_call, tool=_tool("b", y=2)),
                 ]
             )
         # 1 failure observation (A fails → B still follows)
         base = 9
         steps.extend(
             [
+                _make_step(base, StepType.tool_call, tool=_tool("a", x=1)),
                 _make_step(
-                    base, StepType.tool_call, tool_name="a", tool_input={"x": 1}
+                    base + 1,
+                    StepType.tool_result,
+                    tool=Tool(name="a", output="error: failed"),
                 ),
-                _make_step(base + 1, StepType.tool_result, tool_output="error: failed"),
-                _make_step(
-                    base + 2, StepType.tool_call, tool_name="b", tool_input={"y": 2}
-                ),
+                _make_step(base + 2, StepType.tool_call, tool=_tool("b", y=2)),
             ]
         )
         trajectory = Trajectory(id="test", steps=steps)
@@ -355,15 +369,16 @@ class TestFromTrajectory:
     def test_data_flow_signal_from_dependency_rules(self):
         """Req 9.5: Data-flow via DataDependencyRule cross-ref → high."""
         steps = [
+            _make_step(0, StepType.tool_call, tool=_tool("read_file", path="/x")),
             _make_step(
-                0, StepType.tool_call, tool_name="read_file", tool_input={"path": "/x"}
+                1,
+                StepType.tool_result,
+                tool=Tool(name="read_file", output='{"path": "/x"}'),
             ),
-            _make_step(1, StepType.tool_result, tool_output='{"path": "/x"}'),
             _make_step(
                 2,
                 StepType.tool_call,
-                tool_name="str_replace",
-                tool_input={"path": "/x"},
+                tool=_tool("str_replace", path="/x"),
             ),
         ]
         trajectory = Trajectory(id="test", steps=steps)

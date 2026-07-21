@@ -254,14 +254,18 @@ class TestParseSWEBenchExample:
     def test_tool_call_steps_have_tool_name(self, trajectory):
         for step in trajectory.steps:
             if step.step_type == StepType.tool_call:
-                assert step.tool_name is not None
-                assert step.tool_name != ""
+                assert step.tool is not None
+                assert step.tool.name is not None
+                assert step.tool.name != ""
 
     def test_tool_call_steps_have_tool_input(self, trajectory):
         for step in trajectory.steps:
             if step.step_type == StepType.tool_call:
-                assert isinstance(step.tool_input, dict)
-                assert "command" in step.tool_input
+                assert step.tool is not None
+                assert len(step.tool.inputs) > 0
+                # The swe_bench parser always produces a "command" param
+                input_keys = {p.key for p in step.tool.inputs}
+                assert "command" in input_keys
 
     def test_tool_call_steps_record_parser_source(self, trajectory):
         valid_sources = {"native_tool_call", "markdown_code_block", "inline_prefix"}
@@ -288,7 +292,7 @@ class TestParseSWEBenchExample:
         bash_steps = [
             s
             for s in trajectory.steps
-            if s.step_type == StepType.tool_call and s.tool_name == "bash"
+            if s.step_type == StepType.tool_call and s.tool.name == "bash"
         ]
         assert bash_steps == [], f"Found {len(bash_steps)} steps still labelled 'bash'"
 

@@ -14,7 +14,7 @@ Unlike the initial implementation, this version:
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, NamedTuple, Optional
 
 from pydantic import model_validator
 
@@ -31,11 +31,38 @@ from trajectory_eval.models.rule import (
     RulePolarity,
     RuleScope,
 )
+from trajectory_eval.models.tool import (
+    ParameterType,
+    SubParameter,
+    ToolParameter,
+)
 from trajectory_eval.models.trajectory import (
     Step,
     StepType,
     Trajectory,
 )
+
+ELIGIBLE_TYPES: frozenset[ParameterType] = frozenset(
+    {
+        ParameterType.file_path,
+        ParameterType.command_line,
+        ParameterType.code,
+        ParameterType.json,
+        ParameterType.xml,
+        ParameterType.url,
+        ParameterType.yaml,
+        ParameterType.date,
+    }
+)
+
+
+class TypeMatch(NamedTuple):
+    """Deduplication key for type-based rules."""
+
+    tool_name: str
+    param_key: str
+    source_tool_name: str
+    detected_type: ParameterType
 
 
 class DataDependencyRule(HardRule):
@@ -77,6 +104,146 @@ class DataDependencyRule(HardRule):
             f"step[{self.source_step}]"
         )
 
+    @staticmethod
+    def _extract_types_from_param(
+        param: ToolParameter | SubParameter,
+    ) -> set[ParameterType]:
+        """Recursively extract all eligible detected_types from a parameter tree.
+
+        Traverses the parameter and all nested sub_parameters at arbitrary depth.
+        Returns only types that are in ELIGIBLE_TYPES.
+
+        Args:
+            param: A ToolParameter or SubParameter to traverse.
+
+        Returns:
+            Set of eligible ParameterType values found in the tree.
+        """
+        result: set[ParameterType] = set()
+
+        if param.detected_type in ELIGIBLE_TYPES:
+            result.add(param.detected_type)
+
+        for sub in param.sub_parameters:
+            result.update(DataDependencyRule._extract_types_from_param(sub))
+
+        return result
+
+    @classmethod
+    def _collect_type_sources(
+        cls,
+        steps: list[Step],
+        up_to_index: int,
+    ) -> dict[ParameterType, list[tuple[str, int]]]:
+        """Collect type-sources from all tool_result steps before the given index.
+
+        Scans tool_result steps in trajectory order. For each step with non-null
+        output_typed, recursively extracts eligible types and records the
+        (tool_name, step_index) pair for each.
+
+        Args:
+            steps: All trajectory steps.
+            up_to_index: Only consider steps with index < up_to_index.
+
+        Returns:
+            Mapping from ParameterType to list of (tool_name, step_index) pairs.
+        """
+        sources: dict[ParameterType, list[tuple[str, int]]] = {}
+
+        for step in steps:
+            if step.index >= up_to_index:
+                break
+
+            if step.step_type != StepType.tool_result:
+                continue
+
+            if step.tool is None or step.tool.output_typed is None:
+                continue
+
+            types = cls._extract_types_from_param(step.tool.output_typed)
+
+            for t in types:
+                if t not in sources:
+                    sources[t] = []
+                sources[t].append((step.tool.name, step.index))
+
+        return sources
+
+    @classmethod
+    def _type_based_rules(
+        cls,
+        trajectory: Trajectory,
+    ) -> list["DataDependencyRule"]:
+        """Generate type-based DataDependencyRules from a trajectory.
+
+        Algorithm:
+        1. Iterate tool_call steps in trajectory order.
+        2. For each tool_call, collect type-sources from all preceding tool_result steps.
+        3. For each input ToolParameter on the tool_call, recursively extract eligible types.
+        4. For each eligible type found in input, check if a matching type-source exists.
+        5. Apply filters: self-referential exclusion, deduplication.
+        6. Emit DataDependencyRule with confidence=potential.
+
+        Args:
+            trajectory: The complete trajectory to analyze.
+
+        Returns:
+            List of type-based DataDependencyRule instances.
+        """
+        rules: list[DataDependencyRule] = []
+        seen: set[TypeMatch] = set()
+
+        for step in trajectory.steps:
+            if step.step_type != StepType.tool_call or step.tool is None:
+                continue
+
+            tool_name = step.tool.name
+
+            # Collect all type-sources from preceding tool_result steps
+            type_sources = cls._collect_type_sources(trajectory.steps, step.index)
+
+            # Extract eligible types from each input parameter
+            for input_param in step.tool.inputs:
+                input_types = cls._extract_types_from_param(input_param)
+
+                for detected_type in input_types:
+                    if detected_type not in type_sources:
+                        continue
+
+                    # Match against each source
+                    for source_tool_name, source_step_index in type_sources[
+                        detected_type
+                    ]:
+                        # Self-referential exclusion
+                        if source_tool_name == tool_name:
+                            continue
+
+                        # Deduplication
+                        match_key = TypeMatch(
+                            tool_name=tool_name,
+                            param_key=input_param.key,
+                            source_tool_name=source_tool_name,
+                            detected_type=detected_type,
+                        )
+                        if match_key in seen:
+                            continue
+                        seen.add(match_key)
+
+                        rules.append(
+                            DataDependencyRule(
+                                id=f"type_dep_{step.index}_{input_param.key}_{source_step_index}",
+                                step_index=step.index,
+                                param_key=input_param.key,
+                                param_value=f"type:{detected_type.value}",
+                                source_step=source_step_index,
+                                source_tool_name=source_tool_name,
+                                tool_name=tool_name,
+                                confidence=ConfidenceLevel.potential,
+                            )
+                        )
+
+        return rules
+
     @classmethod
     def from_trajectory(
         cls,
@@ -91,6 +258,9 @@ class DataDependencyRule(HardRule):
                 continue
 
             rules.extend(cls._rules_for_step(step, trajectory.steps))
+
+        # Append type-based rules after value-based rules
+        rules.extend(cls._type_based_rules(trajectory))
 
         return rules
 

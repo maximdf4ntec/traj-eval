@@ -26,12 +26,22 @@ from trajectory_eval.models.rule import (
     RuleScope,
     SoftRule,
 )
+from trajectory_eval.models.tool import (
+    ParameterType,
+    SubParameter,
+    Tool,
+    ToolParameter,
+)
 from trajectory_eval.models.trajectory import Step, StepType, Trajectory
 
 __all__ = [
     "Trajectory",
     "Step",
     "StepType",
+    "Tool",
+    "ToolParameter",
+    "SubParameter",
+    "ParameterType",
     "Rule",
     "HardRule",
     "SoftRule",

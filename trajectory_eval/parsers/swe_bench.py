@@ -27,7 +27,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from trajectory_eval.models.tool import Tool
 from trajectory_eval.models.trajectory import Step, StepType, Trajectory
+from trajectory_eval.parsers.parameter import ParserRegistry
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -273,6 +275,8 @@ def parse_swe_bench(file_path: str) -> Trajectory:
 
     parsed_steps = parse_single_trajectory(messages)
 
+    registry = ParserRegistry()
+
     steps: list[Step] = []
     step_index = 0
 
@@ -296,13 +300,14 @@ def parse_swe_bench(file_path: str) -> Trajectory:
         elif tool_calls:
             # One Step per identified tool call.
             for tc in tool_calls:
+                tool_input_dict = {"command": tc["arguments"]}
+                inputs = [registry.detect(k, v) for k, v in tool_input_dict.items()]
                 steps.append(
                     Step(
                         index=step_index,
                         step_type=StepType.tool_call,
                         timestamp=_epoch_plus(step_index),
-                        tool_name=tc["tool_name"],
-                        tool_input={"command": tc["arguments"]},
+                        tool=Tool(name=tc["tool_name"], inputs=inputs),
                         metadata={
                             "parser_source": tc.get("parser_source", ""),
                             "thought": thought,
@@ -312,15 +317,38 @@ def parse_swe_bench(file_path: str) -> Trajectory:
                 step_index += 1
 
             if response is not None:
+                # Run type detection on the output for the typed representation
+                output_typed_param = registry.detect("output", response)
+                output_typed_param = output_typed_param.model_copy(
+                    update={"direction": "output"}
+                )
+
+                # Find the preceding tool_call's tool name for the tool_result step
+                prev_tool_name = ""
+                for s in reversed(steps):
+                    if s.step_type == StepType.tool_call and s.tool is not None:
+                        prev_tool_name = s.tool.name
+                        break
+
                 steps.append(
                     Step(
                         index=step_index,
                         step_type=StepType.tool_result,
                         timestamp=_epoch_plus(step_index),
-                        tool_output=response,
+                        tool=Tool(
+                            name=prev_tool_name,
+                            output=response,
+                            output_typed=output_typed_param,
+                        ),
                     )
                 )
                 step_index += 1
+                # Attach output to the preceding tool_call step's tool
+                for s in reversed(steps[:-1]):
+                    if s.step_type == StepType.tool_call and s.tool is not None:
+                        s.tool.output = response
+                        s.tool.output_typed = output_typed_param
+                        break
 
         else:
             # No tool calls — plain LLM response.

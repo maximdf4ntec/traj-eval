@@ -24,6 +24,7 @@ from trajectory_eval.models.contract import (
     RuleTarget,
 )
 from trajectory_eval.models.rule import ConfidenceLevel, RulePolarity, RuleScope
+from trajectory_eval.models.tool import ParameterType, Tool, ToolParameter
 from trajectory_eval.models.trajectory import Step, StepType, Trajectory
 
 
@@ -327,11 +328,16 @@ def _step_for_type(draw: st.DrawFn, index: int, step_type: StepType) -> Step:
         # Ensure at least one param
         if not params:
             params = {_PARAM_NAMES[0]: draw(st.text(min_size=1, max_size=30))}
-        return Step(tool_name=tool_name, tool_input=params, **base)
+        tool_inputs = [
+            ToolParameter(key=k, raw_value=v, detected_type=ParameterType.plain_text)
+            for k, v in params.items()
+        ]
+        return Step(tool=Tool(name=tool_name, inputs=tool_inputs), **base)
 
     if step_type == StepType.tool_result:
         output = draw(st.text(min_size=1, max_size=200))
-        return Step(tool_output=output, **base)
+        tool_name = draw(st.sampled_from(_TOOL_NAMES))
+        return Step(tool=Tool(name=tool_name, output=output), **base)
 
     # llm_response
     response = draw(st.text(min_size=5, max_size=300))

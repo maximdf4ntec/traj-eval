@@ -105,11 +105,6 @@ def _format_trajectory(trajectory: Trajectory) -> str:
             lines.append(f"    Args: {tool_input_str}")
 
         elif step.step_type == StepType.tool_result:
-            tool_name = (
-                step.metadata.get("tool_name", "unknown")
-                if step.metadata
-                else "unknown"
-            )
             output_preview = (step.tool_output or "")[:100]
             if len(step.tool_output or "") > 100:
                 output_preview += "..."

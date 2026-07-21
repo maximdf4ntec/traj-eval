@@ -8,6 +8,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, field_validator
 
+from trajectory_eval.models.tool import Tool
+
 
 class StepType(str, Enum):
     """Classification of a single step in an agent trajectory."""
@@ -31,9 +33,7 @@ class Step(BaseModel):
         cost_usd: Estimated cost in USD (0.0 when unknown).
         prompt: Input text for LLM / user steps (None for other types).
         response: LLM output text (None for non-LLM steps).
-        tool_name: Name of the tool invoked (None for non-tool steps).
-        tool_input: Arguments passed to the tool (None for non-tool steps).
-        tool_output: Raw output returned by the tool (None for non-tool steps).
+        tool: Structured tool invocation (non-None for tool_call and tool_result steps).
         error_message: Error description for error steps (None otherwise).
         model_name: LLM model identifier (None for non-LLM steps).
         temperature: Sampling temperature used (None for non-LLM steps).
@@ -49,9 +49,7 @@ class Step(BaseModel):
 
     prompt: Optional[str] = None
     response: Optional[str] = None
-    tool_name: Optional[str] = None
-    tool_input: Optional[dict[str, Any]] = None
-    tool_output: Optional[str] = None
+    tool: Optional[Tool] = None
     error_message: Optional[str] = None
     model_name: Optional[str] = None
     temperature: Optional[float] = None
@@ -66,14 +64,39 @@ class Step(BaseModel):
         return v
 
     @property
+    def tool_name(self) -> Optional[str]:
+        """Name of the invoked tool (derived from tool field)."""
+        return self.tool.name if self.tool else None
+
+    @property
+    def tool_input(self) -> Optional[dict[str, Any]]:
+        """Arguments passed to the tool as a dict (derived from tool.inputs)."""
+        if self.tool is None:
+            return None
+        return {p.key: p.raw_value for p in self.tool.inputs}
+
+    @property
+    def tool_output(self) -> Optional[str]:
+        """Raw output from the tool invocation (reads from tool.output).
+
+        For tool_call and tool_result steps with a tool reference, returns
+        the tool's output string. For other steps, returns None.
+        """
+        return self.tool.output if self.tool else None
+
+    @property
     def tool_output_parsed(self) -> Optional[dict[str, Any]]:
-        """Parse tool_output as JSON dict, or None if absent / invalid."""
-        if not self.tool_output:
+        """Parse tool_output as JSON dict, or None if absent / invalid.
+
+        Reads from tool.output via the tool_output property.
+        """
+        output = self.tool_output
+        if not output:
             return None
         import json  # noqa: PLC0415 — local import to keep module light
 
         try:
-            parsed = json.loads(self.tool_output)
+            parsed = json.loads(output)
             return parsed if isinstance(parsed, dict) else None
         except (json.JSONDecodeError, ValueError):
             return None

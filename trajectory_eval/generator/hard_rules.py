@@ -13,6 +13,14 @@ compile_contract(trajectory, embed_client, config_path)
     Single entry point producing both BehaviorContract and ExecutionReport.
 """
 
+# TODO 19.07
+# 1. Implement Performance contract
+# 2. Add Prompt DNA for performance rules
+# 3. Implement Additional parser for langfuse format
+# 4. Implement actual output writers for pytest, OpenClaw, evals...
+# 5. Add UI for reviewing rules
+# 6. Add support for golden path / multiple trajectories
+# 7. Add trajectory signature (embedding of the 1st prompt)
 from __future__ import annotations
 
 from pathlib import Path

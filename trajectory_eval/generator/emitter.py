@@ -61,17 +61,29 @@ def emit_data_dependency(rule: HardRule) -> CompiledRule:
     Produces a ``provenance`` / ``data_lineage`` rule expressing that a
     consuming tool's parameter must originate from a specific source tool's
     output.
+
+    The source_tool is included in the target (via the ``tool_pair`` field)
+    so that rules with different source tools are treated as distinct
+    invariants during deduplication. Without this, a tool that receives data
+    from multiple sources would produce "conflicting" constraints and be
+    flagged as an inconsistency instead of being kept as separate rules.
     """
     assert isinstance(rule, DataDependencyRule)
+
+    source = rule.source_tool_name or rule.tool_name
 
     return CompiledRule(
         id=_PLACEHOLDER_ID,
         category=RuleCategory.provenance,
         kind="data_lineage",
-        target=RuleTarget(tool=rule.tool_name, parameter=rule.param_key),
+        target=RuleTarget(
+            tool=rule.tool_name,
+            parameter=rule.param_key,
+            tool_pair=(source, rule.tool_name),
+        ),
         constraint={
             "must_originate_from": {
-                "tool": rule.source_tool_name or rule.tool_name,
+                "tool": source,
                 "output_field": rule.param_key,
             }
         },

@@ -54,7 +54,7 @@ class ToolParamCountRule(HardRule):
 
     def generate(self) -> str:
         """Return the parameter-count assertion pseudocode."""
-        return f"len(step[{self.step_index}].tool_input) == {self.expected_count}"
+        return f"len(step[{self.step_index}].tool.inputs) == {self.expected_count}"
 
     @classmethod
     def from_trajectory(cls, trajectory: Trajectory) -> list["ToolParamCountRule"]:
@@ -65,18 +65,19 @@ class ToolParamCountRule(HardRule):
 
         Returns:
             A list of ToolParamCountRule instances — one per tool_call step
-            that has tool_input. Deduplication happens downstream.
+            that has tool inputs. Deduplication happens downstream.
         """
         rules: list[ToolParamCountRule] = []
         for step in trajectory.steps:
-            if step.step_type != StepType.tool_call or not step.tool_input:
+            if step.step_type != StepType.tool_call or step.tool is None:
                 continue
-            tool_name = step.tool_name or ""
+            if not step.tool.inputs:
+                continue
             rule = cls(
                 id=f"tool_params_{step.index}_count",
                 step_index=step.index,
-                tool_name=tool_name,
-                expected_count=len(step.tool_input),
+                tool_name=step.tool.name,
+                expected_count=len(step.tool.inputs),
             )
             rules.append(rule)
         return rules
@@ -108,7 +109,7 @@ class ToolParamTypeRule(HardRule):
         """Compute rule_description and pseudocode from typed fields."""
         self.rule_description = (
             f"Parameter '{self.param_key}' of '{self.tool_name}' at step "
-            f"{self.step_index} must be of type {self.expected_type}."
+            f"{self.step_index} must have detected_type '{self.expected_type}'."
         )
         self.pseudocode = self.generate()
         return self
@@ -116,8 +117,8 @@ class ToolParamTypeRule(HardRule):
     def generate(self) -> str:
         """Return the parameter-type assertion pseudocode."""
         return (
-            f"isinstance(step[{self.step_index}].tool_input"
-            f'["{self.param_key}"], {self.expected_type})'
+            f"step[{self.step_index}].tool.inputs['{self.param_key}']"
+            f".detected_type == '{self.expected_type}'"
         )
 
     @classmethod
@@ -134,18 +135,20 @@ class ToolParamTypeRule(HardRule):
         observations: dict[tuple[str, str], list[ToolParamTypeRule]] = defaultdict(list)
 
         for step in trajectory.steps:
-            if step.step_type != StepType.tool_call or not step.tool_input:
+            if step.step_type != StepType.tool_call or step.tool is None:
                 continue
-            tool_name = step.tool_name or ""
-            for key, val in step.tool_input.items():
+            if not step.tool.inputs:
+                continue
+            tool_name = step.tool.name
+            for param in step.tool.inputs:
                 rule = cls(
-                    id=f"tool_params_{step.index}_{key}_type",
+                    id=f"tool_params_{step.index}_{param.key}_type",
                     step_index=step.index,
                     tool_name=tool_name,
-                    param_key=key,
-                    expected_type=type(val).__name__,
+                    param_key=param.key,
+                    expected_type=param.detected_type.value,
                 )
-                observations[(tool_name, key)].append(rule)
+                observations[(tool_name, param.key)].append(rule)
 
         # Return ALL observations — deduplication happens downstream
         return [rule for group in observations.values() for rule in group]

@@ -23,6 +23,7 @@ from trajectory_eval.models.rule import ConfidenceLevel
 
 # Ordering map for ConfidenceLevel comparison (higher value = higher confidence).
 _CONFIDENCE_ORDER: dict[ConfidenceLevel, int] = {
+    ConfidenceLevel.potential: -1,
     ConfidenceLevel.low: 0,
     ConfidenceLevel.medium: 1,
     ConfidenceLevel.high: 2,
