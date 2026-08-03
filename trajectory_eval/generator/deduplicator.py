@@ -151,6 +151,9 @@ class RuleDeduplicator:
             - support >= 3: keep raw confidence as-is
             - support == 2: cap at medium
             - support == 1: cap at low
+
+        Never *upgrades* confidence — if raw is already below the cap
+        (e.g. ``potential``), it stays as-is.
         """
         if support >= 3:
             return raw
@@ -158,5 +161,7 @@ class RuleDeduplicator:
             if raw == ConfidenceLevel.high:
                 return ConfidenceLevel.medium
             return raw
-        # support == 1
-        return ConfidenceLevel.low
+        # support == 1: cap at low, but never upgrade below-low values.
+        if _CONFIDENCE_ORDER[raw] > _CONFIDENCE_ORDER[ConfidenceLevel.low]:
+            return ConfidenceLevel.low
+        return raw

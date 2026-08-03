@@ -97,10 +97,19 @@ t_grounded = _traj(
     _step(2, StepType.llm_response, response="I will modify `src/utils/helpers.py`"),
 )
 rules_m = LlmGroundingRule.from_trajectory(t_grounded)
-# helpers.py is in prior context — no grounding violation
-violations = [r.entity_value for r in rules_m]
-assert "src/utils/helpers.py" not in violations, f"False positive: {violations}"
-print("Rule m (grounded ref, no violation): PASS")
+# helpers.py is in prior context — should be a positive (grounded) rule, not negative
+negative_violations = [
+    r.entity_value for r in rules_m if r.polarity.value == "negative"
+]
+positive_grounded = [r for r in rules_m if r.polarity.value == "positive"]
+assert (
+    "src/utils/helpers.py" not in negative_violations
+), f"False positive: {negative_violations}"
+assert any(
+    r.entity_value == "src/utils/helpers.py" and r.source_step == 1
+    for r in positive_grounded
+), f"Expected positive grounding rule, got {[(r.entity_value, r.source_step) for r in positive_grounded]}"
+print("Rule m (grounded ref, positive lineage): PASS")
 
 t_ungrounded = _traj(
     _step(
@@ -109,9 +118,11 @@ t_ungrounded = _traj(
     _step(1, StepType.llm_response, response="Check `src/foo/bar.py` for the bug"),
 )
 rules_ug = LlmGroundingRule.from_trajectory(t_ungrounded)
+negative_rules = [r for r in rules_ug if r.polarity.value == "negative"]
 assert any(
-    r.entity_value == "src/foo/bar.py" for r in rules_ug
-), f"Expected violation, got {[r.entity_value for r in rules_ug]}"
-print("Rule m (ungrounded ref flagged): PASS")
+    r.entity_value == "src/foo/bar.py" and r.confidence.value == "potential"
+    for r in negative_rules
+), f"Expected ungrounded (potential) violation, got {[(r.entity_value, r.confidence.value) for r in negative_rules]}"
+print("Rule m (ungrounded ref, potential confidence): PASS")
 
 print("\nAll smoke tests PASSED.")

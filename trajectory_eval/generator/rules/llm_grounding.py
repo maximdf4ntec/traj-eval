@@ -1,13 +1,24 @@
-"""Rule m — LLM Response Grounding / Referential Integrity.
+"""Rule m — LLM Response Grounding / Data Lineage.
 
-Scans every ``llm_response`` step for entity references — file paths, hash
-IDs (``#123``), commit SHAs, and backtick-quoted identifiers — and asserts
-that each reference can be found (up to cosmetic normalization) in the N
-most recent ``tool_result`` outputs (configurable context window, default
-10).
+Traces entity references in ``llm_response`` steps back to their origin in
+prior ``tool_result`` outputs. This is the LLM-facing counterpart of
+:class:`DataDependencyRule` (tool→tool lineage): it establishes whether
+data produced by tools actually flows into the LLM's reasoning.
 
-An entity absent from all prior tool_result outputs is flagged as an
-ungrounded reference (``polarity=negative`` violation).
+Two kinds of rules are emitted:
+
+* **Positive (grounded)**: An entity in the LLM response can be traced to a
+  specific prior ``tool_result``. This confirms tool→LLM data lineage —
+  the LLM is referencing verified environment state. Confidence is
+  ``high`` or ``medium`` depending on entity type specificity.
+
+* **Negative (ungrounded)**: An entity appears in the LLM response but
+  cannot be found in any of the N preceding ``tool_result`` outputs.
+  This is a *potential* hallucination signal — the LLM may be
+  fabricating references. Confidence is ``potential`` because the
+  entity might legitimately come from the user prompt, system
+  instructions, or the LLM's training data rather than being a
+  hallucination.
 
 Entity types detected
 ----------------------
@@ -163,6 +174,52 @@ def _build_context(steps: list[Step], before_index: int, window: int) -> str:
     return "\n".join(results)
 
 
+def _find_grounding_source(
+    entity_type: str,
+    entity_value: str,
+    steps: list[Step],
+    before_index: int,
+    window: int,
+) -> Optional[int]:
+    """Find the earliest tool_result step that contains *entity_value*.
+
+    Searches the N most-recent ``tool_result`` steps before *before_index*
+    for a (normalized) substring match. Returns the step index of the first
+    match, or ``None`` if the entity is ungrounded.
+
+    Args:
+        entity_type: Category of the entity (affects normalization).
+        entity_value: The raw entity string to search for.
+        steps: Full step list (assumed sorted by ``.index``).
+        before_index: Exclusive upper bound on step index.
+        window: Maximum number of prior tool_result steps to search.
+
+    Returns:
+        Step index of the grounding source, or ``None``.
+    """
+    normalized_value = _normalize_for_match(entity_type, entity_value)
+    candidates: list[Step] = []
+
+    for step in reversed(steps):
+        if step.index >= before_index:
+            continue
+        if step.step_type != StepType.tool_result:
+            continue
+        candidates.append(step)
+        if len(candidates) >= window:
+            break
+
+    # Search in chronological order (earliest first) to find the origin.
+    for step in reversed(candidates):
+        output_text = _stringify_tool_output(step.tool_output)
+        if entity_type == "file_path":
+            output_text = output_text.replace("\\", "/")
+        if normalized_value in output_text:
+            return step.index
+
+    return None
+
+
 def _normalize_for_match(entity_type: str, value: str) -> str:
     """Normalize cosmetic variation before a verbatim containment check.
 
@@ -203,60 +260,70 @@ def _safe_id_fragment(value: str) -> str:
 
 
 class LlmGroundingRule(HardRule):
-    """Rule m: entity references in LLM responses must appear in prior tool_results.
+    """Rule m: data lineage between tool_results and LLM responses.
 
-    An ungrounded reference is an entity found in the LLM response that is
-    absent (after normalization) from the N most-recent ``tool_result``
-    outputs. Such references are flagged as violations (``polarity=negative``).
+    Establishes whether entity references in LLM responses can be traced
+    to specific prior ``tool_result`` outputs (tool→LLM data flow), similar
+    to how :class:`DataDependencyRule` establishes tool→tool lineage.
+
+    **Positive rules** (grounded): An entity is confirmed to originate from
+    a specific tool_result step. This is a high-confidence data lineage
+    assertion — the LLM is demonstrably using verified environment data.
+
+    **Negative rules** (ungrounded): An entity cannot be found in any
+    recent tool_result. This is a *potential* hallucination signal with
+    lower confidence, since the entity might legitimately come from the
+    user prompt, system message, or model knowledge.
 
     Attributes:
-        entity_type: Category of the ungrounded entity (``"file_path"``,
+        entity_type: Category of the entity (``"file_path"``,
             ``"hash_id"``, ``"commit_sha"``, ``"backtick_ident"``).
         entity_value: The verbatim entity string extracted from the response.
         context_window: Number of prior tool_result steps searched.
+        source_step: Step index of the tool_result that grounds this entity,
+            or ``None`` if ungrounded.
     """
 
     entity_type: str
     entity_value: str
     context_window: int
+    source_step: Optional[int] = None
 
-    polarity: RulePolarity = RulePolarity.negative
-    # NOTE: this rule needs the current step *plus* up to context_window
-    # preceding tool_result steps, not just the current step in isolation.
-    # Confirm `RuleScope.frame` is intended to cover multi-step lookback in
-    # the base schema, or introduce a dedicated scope value if `frame`
-    # elsewhere implies single-step evaluability.
+    # Defaults — overridden per-instance in from_trajectory based on
+    # whether the entity is grounded or not.
+    polarity: RulePolarity = RulePolarity.positive
     scope: RuleScope = RuleScope.frame
-    # Fixed for every instance of this rule class — not instance-variable —
-    # so this is a plain default, not Optional.
     step_type: StepType = StepType.llm_response
     confidence: ConfidenceLevel = ConfidenceLevel.medium
 
-    # NOTE: confirm this field name matches what HardRule / other rule
-    # generators in this codebase use for the human-readable description
-    # (some earlier examples used a plain `description` key) — rename if
-    # there's a naming convention drift with sibling rule classes.
     rule_description: str = ""
     pseudocode: str = ""
 
     @model_validator(mode="after")
     def _derive_text_fields(self) -> "LlmGroundingRule":
         """Compute rule_description and pseudocode from typed fields."""
-        self.rule_description = (
-            f"VIOLATION: LLM response at step {self.step_index} references "
-            f"{self.entity_type} {self.entity_value!r} which was not found in any "
-            f"of the {self.context_window} preceding tool_result output(s)."
-        )
+        if self.source_step is not None:
+            self.rule_description = (
+                f"LLM response at step {self.step_index} references "
+                f"{self.entity_type} {self.entity_value!r} which originates from "
+                f"tool_result at step {self.source_step}."
+            )
+        else:
+            self.rule_description = (
+                f"LLM response at step {self.step_index} references "
+                f"{self.entity_type} {self.entity_value!r} which was not found in any "
+                f"of the {self.context_window} preceding tool_result output(s)."
+            )
         self.pseudocode = self.generate()
         return self
 
     def generate(self) -> str:
-        """Return the grounding-check assertion pseudocode.
-
-        References ``_build_context``, the same helper used to make the
-        grounding decision at generation time, so the exported assertion
-        can't drift from the logic that flagged the violation.
-        """
+        """Return the grounding-check assertion pseudocode."""
+        if self.source_step is not None:
+            return (
+                f"{self.entity_value!r} in "
+                f"step[{self.source_step}].tool_output  # grounded"
+            )
         return (
             f"{self.entity_value!r} in "
             f"_build_context(trajectory.steps, before_index={self.step_index}, "
@@ -270,13 +337,24 @@ class LlmGroundingRule(HardRule):
         context_window: int = _DEFAULT_CONTEXT_WINDOW,
         entity_types: frozenset[str] = _DEFAULT_ENTITY_TYPES,
     ) -> list["LlmGroundingRule"]:
-        """Build grounding rules for ungrounded entity references in LLM responses.
+        """Build grounding rules for entity references in LLM responses.
 
         For each ``llm_response`` step, every extracted entity of an
         enabled type is checked (after normalization) against the
         concatenated text of up to *context_window* preceding
-        ``tool_result`` outputs. A rule is emitted for each entity that
-        cannot be found.
+        ``tool_result`` outputs.
+
+        Two classes of rules are emitted:
+
+        * **Grounded (positive)**: The entity is found in a specific prior
+          ``tool_result``. This confirms tool→LLM data lineage. Emitted
+          with ``polarity=positive`` and ``confidence=high`` (file_path,
+          commit_sha) or ``confidence=medium`` (hash_id).
+
+        * **Ungrounded (negative)**: The entity cannot be found in any
+          preceding ``tool_result``. This is a potential hallucination
+          signal. Emitted with ``polarity=negative`` and
+          ``confidence=potential``.
 
         Args:
             trajectory: The full trajectory to analyse.
@@ -288,7 +366,7 @@ class LlmGroundingRule(HardRule):
                 include ``backtick_ident``, which is noisier and opt-in.
 
         Returns:
-            One LlmGroundingRule per ungrounded ``(step, entity)`` pair found.
+            List of LlmGroundingRule instances (both grounded and ungrounded).
         """
         steps = trajectory.steps
         rules: list[LlmGroundingRule] = []
@@ -300,21 +378,19 @@ class LlmGroundingRule(HardRule):
             if not response.strip():
                 continue
 
-            context = _build_context(steps, step.index, context_window)
             entities = _extract_entities(response)
 
             for entity_type, entity_value in entities:
                 if entity_type not in entity_types:
                     continue
 
-                normalized_value = _normalize_for_match(entity_type, entity_value)
-                normalized_context = (
-                    context.replace("\\", "/")
-                    if entity_type == "file_path"
-                    else context
+                source_step = _find_grounding_source(
+                    entity_type, entity_value, steps, step.index, context_window
                 )
 
-                if normalized_value not in normalized_context:
+                if source_step is not None:
+                    # Grounded: confirmed tool→LLM data lineage.
+                    confidence = _grounded_confidence(entity_type)
                     rules.append(
                         cls(
                             id=(
@@ -326,7 +402,46 @@ class LlmGroundingRule(HardRule):
                             entity_type=entity_type,
                             entity_value=entity_value,
                             context_window=context_window,
+                            source_step=source_step,
+                            polarity=RulePolarity.positive,
+                            confidence=confidence,
+                        )
+                    )
+                else:
+                    # Ungrounded: potential hallucination (low confidence).
+                    rules.append(
+                        cls(
+                            id=(
+                                f"llm_grounding_{step.index}"
+                                f"_{entity_type}"
+                                f"_{_safe_id_fragment(entity_value)}"
+                            ),
+                            step_index=step.index,
+                            entity_type=entity_type,
+                            entity_value=entity_value,
+                            context_window=context_window,
+                            source_step=None,
+                            polarity=RulePolarity.negative,
+                            confidence=ConfidenceLevel.potential,
                         )
                     )
 
         return rules
+
+
+def _grounded_confidence(entity_type: str) -> ConfidenceLevel:
+    """Return the confidence level for a grounded entity by type.
+
+    File paths and commit SHAs are highly specific identifiers — if they
+    appear in both a tool_result and an LLM response, the lineage is
+    near-certain. Hash IDs (``#123``) are shorter and more ambiguous.
+
+    Args:
+        entity_type: The entity category string.
+
+    Returns:
+        Confidence level for the grounded lineage assertion.
+    """
+    if entity_type in ("file_path", "commit_sha"):
+        return ConfidenceLevel.high
+    return ConfidenceLevel.medium

@@ -486,6 +486,20 @@ def llm_grounding_rules(draw: st.DrawFn) -> "LlmGroundingRule":
     entity_type = draw(st.sampled_from(["file_path", "hash_id", "commit_sha"]))
     entity_value = draw(st.sampled_from(_ENTITY_VALUES))
     context_window = draw(st.integers(min_value=1, max_value=20))
+    is_grounded = draw(st.booleans())
+
+    if is_grounded:
+        source_step = draw(st.integers(min_value=0, max_value=step_idx - 1))
+        polarity = RulePolarity.positive
+        confidence = (
+            ConfidenceLevel.high
+            if entity_type in ("file_path", "commit_sha")
+            else ConfidenceLevel.medium
+        )
+    else:
+        source_step = None
+        polarity = RulePolarity.negative
+        confidence = ConfidenceLevel.potential
 
     return LlmGroundingRule(
         id=f"llm_grounding_{step_idx}_{entity_type}",
@@ -493,6 +507,9 @@ def llm_grounding_rules(draw: st.DrawFn) -> "LlmGroundingRule":
         entity_type=entity_type,
         entity_value=entity_value,
         context_window=context_window,
+        source_step=source_step,
+        polarity=polarity,
+        confidence=confidence,
     )
 
 

@@ -205,21 +205,29 @@ def emit_llm_format(rule: HardRule) -> CompiledRule:
 def emit_llm_grounding(rule: HardRule) -> CompiledRule:
     """Convert a LlmGroundingRule to a step-agnostic CompiledRule.
 
-    Produces a ``grounding`` / ``entity_reference`` rule asserting that an
-    entity referenced in the LLM response must appear in prior tool outputs.
+    Produces a ``grounding`` / ``entity_reference`` rule. For grounded
+    (positive) rules, asserts tool→LLM data lineage. For ungrounded
+    (negative) rules, signals a potential hallucination.
     """
     assert isinstance(rule, LlmGroundingRule)
+
+    constraint: dict = {
+        "entity_type": rule.entity_type,
+        "context_window": rule.context_window,
+    }
+    if rule.source_step is not None:
+        constraint["source_step"] = rule.source_step
+        constraint["grounded"] = True
+    else:
+        constraint["grounded"] = False
+        constraint["must_appear_in_prior_tool_outputs"] = True
 
     return CompiledRule(
         id=_PLACEHOLDER_ID,
         category=RuleCategory.grounding,
         kind="entity_reference",
         target=RuleTarget(entity=rule.entity_value),
-        constraint={
-            "entity_type": rule.entity_type,
-            "must_appear_in_prior_tool_outputs": True,
-            "context_window": rule.context_window,
-        },
+        constraint=constraint,
         cardinality=RuleCardinality.all,
         metadata=RuleMetadata(confidence=rule.confidence, support=1),
     )
