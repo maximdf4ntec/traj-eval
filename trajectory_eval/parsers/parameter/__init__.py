@@ -8,6 +8,7 @@ from trajectory_eval.parsers.parameter.command_line import CommandLineParser
 from trajectory_eval.parsers.parameter.json_parser import JsonParser
 from trajectory_eval.parsers.parameter.code import CodeParser
 from trajectory_eval.parsers.parameter.path import PathParser
+from trajectory_eval.parsers.parameter.url import UrlParser
 
 __all__ = [
     "ParameterParser",
@@ -16,4 +17,5 @@ __all__ = [
     "JsonParser",
     "CodeParser",
     "PathParser",
+    "UrlParser",
 ]

@@ -164,9 +164,8 @@ def _constraint_for_kind(draw: st.DrawFn, kind: str) -> dict:
     """Generate a constraint dict appropriate for the given kind."""
     if kind == "data_lineage":
         source_tool = draw(st.sampled_from(_TOOL_NAMES))
-        output_field = draw(st.sampled_from(_PARAM_NAMES))
         return {
-            "must_originate_from": {"tool": source_tool, "output_field": output_field}
+            "must_originate_from": {"tool": source_tool, "output_field": "__OUTPUT__"}
         }
 
     if kind == "tool_ordering":

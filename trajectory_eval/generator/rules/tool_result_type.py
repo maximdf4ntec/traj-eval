@@ -1,15 +1,15 @@
 """Rule k — Tool Result Output Type Validation.
 
 For each ``tool_result`` step the rule detects the content type of the
-output (JSON, XML, Python code, or a plain number) and asserts that the
-content is valid for that type.
+output (JSON, XML, Python code, number, file paths, or plain text) and
+asserts that the content is valid for that type.
 
 Detection priority
 ------------------
 1. Tool-name hint  — if the tool name contains a format keyword (e.g. ``"json"``)
-2. Content-based   — try JSON → XML → Python (with keyword guard) → number
-
-Plain-text output is skipped (no useful structural validation).
+2. Content-based   — try JSON → XML → Python (with keyword guard) → number → file_path
+3. Fallback        — plain_text (ensures we record that a tool produces output,
+                     distinguishing it from void/empty returns)
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import ast
 import json
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from enum import Enum
 from typing import Optional
 
@@ -30,6 +31,8 @@ from trajectory_eval.models.rule import (
     RuleScope,
 )
 from trajectory_eval.models.trajectory import Step, StepType, Trajectory
+from trajectory_eval.generator.utils.fact_normalizer import extract_file_paths
+from trajectory_eval.generator.rules._helpers import preceding_tool_call
 
 # Tool-name substrings that hint at JSON output.
 _JSON_TOOL_HINTS: frozenset[str] = frozenset(["json"])
@@ -118,11 +121,15 @@ def _is_number(text: str) -> bool:
 
 
 # Pattern for Unix absolute paths with extension.
-_RE_FILE_PATH = re.compile(r"^(/[a-zA-Z0-9_./-]+\.[a-zA-Z]{1,10}\s*)+$")
+# (kept for backward compat with _RE_FILE_PATH references, but the function
+# now delegates to extract_file_paths for consistency.)
 
 
 def _is_file_path_output(text: str) -> bool:
-    """Return True when text consists of one or more file paths (one per line).
+    """Return True when text consists primarily of file paths (one per line).
+
+    Uses the shared ``extract_file_paths`` from fact_normalizer to ensure
+    consistent path detection across all rules.
 
     Detects outputs like:
         /testbed/boltons/tableutils.py
@@ -146,20 +153,24 @@ def _is_file_path_output(text: str) -> bool:
     return True
 
 
-def _detect_output_type(
+def detect_output_type(
     tool_name: str,
     content: str,
-) -> Optional[tuple[OutputType, str]]:
-    """Detect the structured content type of a tool_result output.
+) -> tuple[OutputType, str]:
+    """Detect the content type of a tool_result output.
 
     Applies tool-name hints first, then falls back to content-based probes.
+    When no structured type is detected, returns ``OutputType.plain_text``.
+
+    This function is the single canonical output-type detector, used by both
+    ToolResultTypeRule and ToolOutputUtilizationRule.
 
     Args:
         tool_name: Name of the tool that produced *content*.
         content: Raw tool_result output text.
 
     Returns:
-        A ``(OutputType, detection_method)`` tuple, or ``None`` for plain text.
+        A ``(OutputType, detection_method)`` tuple.
         ``detection_method`` is one of ``"tool_name_hint"`` or
         ``"content_detection"``.
     """
@@ -183,15 +194,16 @@ def _detect_output_type(
     if _is_file_path_output(content_stripped):
         return OutputType.file_path, "content_detection"
 
-    return None  # plain text — skip
+    return OutputType.plain_text, "content_detection"
 
 
-_VALIDATORS: dict[OutputType, "Callable[[str], bool]"] = {  # type: ignore[name-defined]
+_VALIDATORS: dict[OutputType, Callable[[str], bool]] = {
     OutputType.json: _is_valid_json,
     OutputType.xml: _is_valid_xml,
     OutputType.python: _is_valid_python,
     OutputType.number: _is_number,
     OutputType.file_path: _is_file_path_output,
+    OutputType.plain_text: lambda text: bool(text.strip()),
 }
 
 
@@ -251,14 +263,15 @@ class ToolResultTypeRule(HardRule):
 
     @classmethod
     def from_trajectory(cls, trajectory: Trajectory) -> list["ToolResultTypeRule"]:
-        """Build output-type rules for all tool_result steps with detectable types.
+        """Build output-type rules for all tool_result steps.
 
         Args:
             trajectory: The full trajectory to analyse.
 
         Returns:
-            One ToolResultTypeRule per tool_result step whose output has a
-            detectable structured type (JSON, XML, Python, or number).
+            One ToolResultTypeRule per tool_result step with non-empty output,
+            including plain_text results (to distinguish "returns text" from
+            "returns void").
         """
         steps = trajectory.steps
         rules: list[ToolResultTypeRule] = []
@@ -271,17 +284,10 @@ class ToolResultTypeRule(HardRule):
                 continue
 
             # Retrieve the preceding tool_call to get the tool-name hint.
-            tool_name = ""
-            for s in reversed(steps):
-                if s.index < step.index and s.step_type == StepType.tool_call:
-                    tool_name = s.tool_name or ""
-                    break
+            prev_call = preceding_tool_call(steps, step.index)
+            tool_name = prev_call.tool_name or "" if prev_call else ""
 
-            detection = _detect_output_type(tool_name, output)
-            if detection is None:
-                continue
-
-            detected_type, method = detection
+            detected_type, method = detect_output_type(tool_name, output)
             is_valid = _VALIDATORS[detected_type](output.strip())
 
             rules.append(

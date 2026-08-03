@@ -20,11 +20,17 @@ from typing import Callable
 from trajectory_eval.generator.rules.data_dependency import DataDependencyRule
 from trajectory_eval.generator.rules.llm_format import LlmResponseFormatRule
 from trajectory_eval.generator.rules.llm_grounding import LlmGroundingRule
+from trajectory_eval.generator.rules.llm_response_utilization import (
+    LlmResponseUtilizationRule,
+)
 from trajectory_eval.generator.rules.mutation_matcher import MutationMatcherRule
 from trajectory_eval.generator.rules.terminal_state import TerminalStateRule
 from trajectory_eval.generator.rules.tool_checks import (
     ToolParamCountRule,
     ToolParamTypeRule,
+)
+from trajectory_eval.generator.rules.tool_output_utilization import (
+    ToolOutputUtilizationRule,
 )
 from trajectory_eval.generator.rules.tool_result_type import ToolResultTypeRule
 from trajectory_eval.generator.rules.tool_sequence import ToolSequenceRule
@@ -84,7 +90,7 @@ def emit_data_dependency(rule: HardRule) -> CompiledRule:
         constraint={
             "must_originate_from": {
                 "tool": source,
-                "output_field": rule.param_key,
+                "output_field": "__OUTPUT__",
             }
         },
         cardinality=RuleCardinality.all,
@@ -264,6 +270,71 @@ def emit_mutation_matcher(rule: HardRule) -> CompiledRule:
     )
 
 
+def emit_tool_output_utilization(rule: HardRule) -> CompiledRule:
+    """Convert a ToolOutputUtilizationRule to a step-agnostic CompiledRule.
+
+    Produces a ``provenance`` / ``tool_output_consumed`` or
+    ``tool_output_not_consumed`` rule. The consumed/not-consumed distinction
+    is encoded in the kind so deduplication treats them as separate invariants
+    rather than contradictions.
+
+    The output_type is NOT included in the constraint since it's already
+    captured by the result_format rule and would cause false contradictions
+    when per-step type detection varies.
+
+    Confidence is capped at medium because consumption is inherently per-step:
+    some invocations of a tool produce output that feeds downstream, others
+    don't. Only the deduplicator (seeing total support) can promote to high.
+    """
+    assert isinstance(rule, ToolOutputUtilizationRule)
+
+    consumed = rule.consumed_by_step is not None
+    kind = "tool_output_consumed" if consumed else "tool_output_not_consumed"
+
+    constraint: dict = {
+        "consumed": consumed,
+    }
+
+    return CompiledRule(
+        id=_PLACEHOLDER_ID,
+        category=RuleCategory.provenance,
+        kind=kind,
+        target=RuleTarget(tool=rule.tool_name),
+        constraint=constraint,
+        cardinality=RuleCardinality.all,
+        metadata=RuleMetadata(confidence=ConfidenceLevel.medium, support=1),
+    )
+
+
+def emit_llm_response_utilization(rule: HardRule) -> CompiledRule:
+    """Convert a LlmResponseUtilizationRule to a step-agnostic CompiledRule.
+
+    Produces a ``provenance`` / ``llm_response_consumed`` or
+    ``llm_response_not_consumed`` rule. Same pattern as tool_output_utilization.
+
+    Confidence is capped at medium for the same reason: consumption is
+    inherently per-step, not a universal tool property.
+    """
+    assert isinstance(rule, LlmResponseUtilizationRule)
+
+    consumed = rule.consumed_by_step is not None
+    kind = "llm_response_consumed" if consumed else "llm_response_not_consumed"
+
+    constraint: dict = {
+        "consumed": consumed,
+    }
+
+    return CompiledRule(
+        id=_PLACEHOLDER_ID,
+        category=RuleCategory.provenance,
+        kind=kind,
+        target=RuleTarget(tool="llm_response"),
+        constraint=constraint,
+        cardinality=RuleCardinality.all,
+        metadata=RuleMetadata(confidence=ConfidenceLevel.medium, support=1),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Emitter registry — maps rule classes to their emitter functions.
 # ---------------------------------------------------------------------------
@@ -278,6 +349,8 @@ _EMITTER_REGISTRY: dict[type, EmitterFn] = {
     LlmGroundingRule: emit_llm_grounding,
     TerminalStateRule: emit_terminal_state,
     MutationMatcherRule: emit_mutation_matcher,
+    ToolOutputUtilizationRule: emit_tool_output_utilization,
+    LlmResponseUtilizationRule: emit_llm_response_utilization,
 }
 
 

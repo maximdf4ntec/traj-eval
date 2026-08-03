@@ -20,8 +20,8 @@ from trajectory_eval.models.rule import (
 )
 from trajectory_eval.models.trajectory import StepType, Trajectory
 from trajectory_eval.generator.rules._helpers import (
+    failed_step_indices,
     is_empty_step,
-    is_failed_step,
     next_tool_call,
     preceding_tool_call,
 )
@@ -103,24 +103,36 @@ class MutationMatcherRule(HardRule):
     ) -> list["MutationMatcherRule"]:
         """Build mutation-matcher rules for every failed/empty tool_result.
 
+        A tool_result is considered failed only when there is structural
+        evidence: an adjacent StepType.error step following the tool_result.
+        Naive keyword matching (e.g. "error" in output) is not used because
+        it produces false positives when outputs incidentally contain those
+        words in file paths, source code, or documentation text.
+
+        Empty results (null, {}, [], or blank) are still detected via
+        is_empty_step as they represent a structural signal.
+
         Args:
             trajectory: The full trajectory to analyse.
-            failure_keywords: Optional list of lowercase keywords that indicate
-                failure in tool_output.  Falls back to the built-in defaults.
+            failure_keywords: Ignored (kept for API compatibility). Failure
+                detection now uses structural StepType.error steps only.
 
         Returns:
             One rule per failed/empty tool_result that has a subsequent call.
         """
-        keywords = (
-            frozenset(failure_keywords)
-            if failure_keywords is not None
-            else _DEFAULT_FAILURE_KEYWORDS
-        )
         steps = trajectory.steps
         rules: list[MutationMatcherRule] = []
 
+        # Identify tool_result steps that are structurally failed (followed
+        # by a StepType.error step).
+        structurally_failed = failed_step_indices(steps)
+
         for step in steps:
-            if not (is_failed_step(step, keywords) or is_empty_step(step)):
+            if step.step_type != StepType.tool_result:
+                continue
+            # Only consider structurally-failed steps or empty results.
+            is_structural_failure = step.index in structurally_failed
+            if not (is_structural_failure or is_empty_step(step)):
                 continue
             call_before = preceding_tool_call(steps, step.index)
             call_after = next_tool_call(steps, step.index)

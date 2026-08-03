@@ -43,6 +43,7 @@ from trajectory_eval.models.rule import (
     RuleScope,
 )
 from trajectory_eval.models.trajectory import Step, StepType, Trajectory
+from trajectory_eval.generator.utils.fact_normalizer import extract_file_paths
 
 _DEFAULT_CONTEXT_WINDOW: int = 10
 
@@ -54,15 +55,6 @@ _DEFAULT_ENTITY_TYPES: frozenset[str] = frozenset(
 _ALL_ENTITY_TYPES: frozenset[str] = _DEFAULT_ENTITY_TYPES | {"backtick_ident"}
 
 # ── Entity extraction patterns ──────────────────────────────────────────────
-
-# Relative Unix path (at least one slash, must have an extension).
-_RE_RELATIVE_PATH = re.compile(
-    r"(?<![/\w])" r"[a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)+\.[a-zA-Z]{1,10}"
-)
-# Absolute Unix path.
-_RE_ABSOLUTE_UNIX = re.compile(r"/[a-zA-Z0-9_./-]+\.[a-zA-Z]{1,10}")
-# Absolute Windows path (e.g. C:\foo\bar.py or c:\foo\bar.py).
-_RE_ABSOLUTE_WIN = re.compile(r"[A-Za-z]:\\[a-zA-Z0-9\\._-]+")
 
 # Issue / PR / ticket ID: #123. The negative lookbehind excludes the common
 # no-space CSS pattern `color:#123456`, while still matching ordinary prose
@@ -100,12 +92,9 @@ def _extract_entities(text: str) -> list[tuple[str, str]]:
             seen.add(value)
             entities.append((kind, value))
 
-    for m in _RE_RELATIVE_PATH.finditer(text):
-        _add("file_path", m.group(0))
-    for m in _RE_ABSOLUTE_UNIX.finditer(text):
-        _add("file_path", m.group(0))
-    for m in _RE_ABSOLUTE_WIN.finditer(text):
-        _add("file_path", m.group(0))
+    # Use the shared canonical file path extraction from fact_normalizer.
+    for path in extract_file_paths(text):
+        _add("file_path", path)
     for m in _RE_HASH_ID.finditer(text):
         _add("hash_id", m.group(0))
     for m in _RE_COMMIT_SHA.finditer(text):
@@ -150,12 +139,11 @@ def _stringify_tool_output(value: object) -> str:
 def _build_context(steps: list[Step], before_index: int, window: int) -> str:
     """Concatenate up to *window* tool_result outputs before *before_index*.
 
-    Steps are sorted by ``.index`` defensively before being walked in
-    reverse, so "N most recent" holds even if the caller's list isn't
-    already in ascending order.
+    Walks the step list in reverse order to collect the N most-recent
+    ``tool_result`` outputs before the given index.
 
     Args:
-        steps: Full step list (any order).
+        steps: Full step list (assumed sorted by ``.index``).
         before_index: Index of the step whose context is being built (exclusive).
         window: Maximum number of prior tool_result steps to include.
 
@@ -163,9 +151,8 @@ def _build_context(steps: list[Step], before_index: int, window: int) -> str:
         Concatenated output strings joined by newlines; empty when no prior
         results exist.
     """
-    ordered = sorted(steps, key=lambda s: s.index)
     results: list[str] = []
-    for step in reversed(ordered):
+    for step in reversed(steps):
         if step.index >= before_index:
             continue
         if step.step_type != StepType.tool_result:

@@ -27,27 +27,35 @@ Environment variables (all optional — LLM calls are skipped gracefully on fail
 """
 
 # TODO
-# 1. Add more hard rules (end trajectory, llm related rules)
+# ✅ 1. Add more hard rules (end trajectory, llm related rules)
 # 1.1 - Terminal state check                ✅ TerminalStateRule (terminal_state.py)
 # 1.2 - Grounding/referential integrity     ✅ LlmGroundingRule  (llm_grounding.py)
 # 1.3 - output type check                   ✅ ToolResultTypeRule (tool_result_type.py)
 # 1.4 - Format/schema conformance           ✅ LlmResponseFormatRule (llm_format.py)
-# 1.5 - Numeric cross-check
+# 1.5 - Numeric cross-check ?
 # 2. Run on different trajectories and check the output
-# 3. Add optimizer to remove duplicate rules and improve the quality of rules
+# ✅ 3. Add optimizer to remove duplicate rules and improve the quality of rules - Done
 # 4. Add support for running on multiple trajectories (not a single run), how to learn and improve
 # 4.1 Basic mechanism - add "trajectory dna to the test set" - embedding of the initial user prompt  + list of tools used
 # 4.2 Might need checks for all trajectory specific rules (those using tool name or prompt)
-# 5. Add support for golden path and compare the generated rules with the golden path rules to see if they match
-# 6. Generate python code
-# 6.1 - check prompt signature and skip if not matching
-# 6.2 - intelligently handle missing tools - notify only once
-# 7. Connect to Langfuse UI
-# 7.1 - Display trajectory steps and applied rules candidates + confidence
-# 7.2 - Allow approve / reject rules and save the approved rules to a file
-# 7.3 - Ask questions about the trajectory and steps??
-# 7.4 - allow mark required / optional steps
-# 8. Finalize failed vs successful trajectory rules and how to handle them
+# 5. Implement Performance contract
+# ✅5.1 Basic rules
+# 5.2 Add Prompt DNA for performance rules (future?)
+# ✅7. Implement Additional parser for langfuse format
+# 8. Add support for golden path / multiple trajectories
+# 11. Generate python code
+# 11.1 - check prompt signature and skip if not matching
+# 11.2 - intelligently handle missing tools - notify only once
+# 12. Generate OpenClaw / Hermes hooks
+# 13. Generate evals
+# 14. Connect to Langfuse UI
+# 15.1 - Display trajectory steps and applied rules candidates + confidence
+# 15.2 - Allow approve / reject rules and save the approved rules to a file
+# 15.3 - Ask questions about the trajectory and steps??
+# 15.4 - allow mark required / optional steps
+# 16. Generate CLI interface
+# 17. Finalize failed vs successful trajectory rules and how to handle them
+
 from __future__ import annotations
 
 import asyncio
@@ -63,6 +71,7 @@ from trajectory_eval.generator.hard_rules import compile_contract
 from trajectory_eval.llm.azure_client import AzureFoundryClient
 from trajectory_eval.models.trajectory import Step, StepType, Trajectory
 from trajectory_eval.parsers.swe_bench import parse_swe_bench
+from trajectory_eval.parsers.langfuse import parse_langfuse
 
 
 def _format_trajectory(trajectory: Trajectory) -> str:
@@ -129,6 +138,38 @@ def _format_trajectory(trajectory: Trajectory) -> str:
     return "\n".join(lines)
 
 
+def _auto_parse(traj_path: str) -> Trajectory:
+    """Auto-detect trajectory format and parse with the appropriate parser.
+
+    Detection heuristic:
+      - If the JSON is an array and any element has "type": "GENERATION",
+        it's a Langfuse observation export.
+      - Otherwise, fall back to the SWE-bench message-list parser.
+
+    Args:
+        traj_path: Path to the trajectory file.
+
+    Returns:
+        A parsed Trajectory instance.
+    """
+    from pathlib import Path
+
+    path = Path(traj_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Trajectory file not found: {traj_path}")
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+
+    # Detect Langfuse format: array of observations with "type" field
+    if isinstance(raw, list) and any(
+        isinstance(item, dict) and item.get("type") in ("GENERATION", "SPAN")
+        for item in raw
+    ):
+        return parse_langfuse(traj_path)
+
+    return parse_swe_bench(traj_path)
+
+
 def _find_preceding_tool_call(
     trajectory: Trajectory, tool_result_index: int
 ) -> Optional[Step]:
@@ -142,13 +183,16 @@ def _find_preceding_tool_call(
 async def evaluate(traj_path: str) -> dict:
     """Parse the trajectory and compile the behavior contract + execution report.
 
+    Automatically detects the format (Langfuse observation export vs SWE-bench
+    messages) based on file content.
+
     Args:
-        traj_path: Path to the ``.traj`` file.
+        traj_path: Path to the trajectory file (.traj or .json).
 
     Returns:
         Dict with 'contract' and 'report' keys, each JSON-serializable.
     """
-    trajectory = parse_swe_bench(traj_path)
+    trajectory = _auto_parse(traj_path)
 
     # Print formatted trajectory for inspection.
     print(_format_trajectory(trajectory), file=sys.stderr)

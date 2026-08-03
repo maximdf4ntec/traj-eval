@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from trajectory_eval.models.tool import Tool
 
@@ -53,7 +53,7 @@ class Step(BaseModel):
     error_message: Optional[str] = None
     model_name: Optional[str] = None
     temperature: Optional[float] = None
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("temperature")
     @classmethod
@@ -127,7 +127,7 @@ class Trajectory(BaseModel):
     total_token_count: int = 0
     total_cost_usd: float = 0.0
     steps: list[Step] = []
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("id")
     @classmethod

@@ -37,17 +37,21 @@ from trajectory_eval.models.trajectory import Trajectory
 from trajectory_eval.generator.rules import (
     CycleBreakRule,
     DataDependencyRule,
+    LatencyBudgetRule,
+    LlmGroundingRule,
+    LlmResponseFormatRule,
+    LlmResponseUtilizationRule,
     MonotonicProgressRule,
     MutationMatcherRule,
     RedundancyRateRule,
+    TokenBudgetRule,
     TokenEfficiencyRule,
+    ToolOutputUtilizationRule,
     ToolSequenceRule,
     ToolParamCountRule,
     ToolParamTypeRule,
     TerminalStateRule,
     ToolResultTypeRule,
-    LlmResponseFormatRule,
-    LlmGroundingRule,
 )
 
 _log = logging.getLogger(__name__)
@@ -71,6 +75,10 @@ _REGISTRY: dict[str, type] = {
     "tool_result_type": ToolResultTypeRule,
     "llm_response_format": LlmResponseFormatRule,
     "llm_grounding": LlmGroundingRule,
+    "token_budget": TokenBudgetRule,
+    "latency_budget": LatencyBudgetRule,
+    "tool_output_utilization": ToolOutputUtilizationRule,
+    "llm_response_utilization": LlmResponseUtilizationRule,
 }
 
 

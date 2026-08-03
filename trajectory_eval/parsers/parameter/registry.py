@@ -49,16 +49,26 @@ class ParserRegistry:
         """Return the default parser ordering.
 
         Default order (most specific to least specific for string values):
-        CommandLineParser, JsonParser, CodeParser, PathParser.
+        UrlParser, CommandLineParser, JsonParser, CodeParser, PathParser.
+
+        UrlParser is first because URLs are unambiguous (http:// or https://
+        prefix) and should not be misclassified as command lines or paths.
 
         Uses lazy imports to avoid circular dependencies.
         """
+        from trajectory_eval.parsers.parameter.url import UrlParser
         from trajectory_eval.parsers.parameter.command_line import CommandLineParser
         from trajectory_eval.parsers.parameter.json_parser import JsonParser
         from trajectory_eval.parsers.parameter.code import CodeParser
         from trajectory_eval.parsers.parameter.path import PathParser
 
-        return [CommandLineParser(), JsonParser(), CodeParser(), PathParser()]
+        return [
+            UrlParser(),
+            CommandLineParser(),
+            JsonParser(),
+            CodeParser(),
+            PathParser(),
+        ]
 
     def detect(self, key: str, value: Any) -> ToolParameter:
         """Dispatch *value* to the first matching parser, or return plain_text.

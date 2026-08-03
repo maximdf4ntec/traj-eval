@@ -101,5 +101,27 @@ trajectory_rules:
     enabled: true
     context_window: 10
 
+  # Rule n — Token Budget Enforcement
+  # Per-step token budget: flag steps whose token_count exceeds observed + pct.
+  token_budget:
+    enabled: true
+    token_budget_pct: 20.0
+
+  # Rule o — Latency Budget Enforcement
+  # Per-step latency budget: flag steps whose latency_ms exceeds observed + pct.
+  latency_budget:
+    enabled: true
+    latency_budget_pct: 50.0
+
+  # Rule p — Tool Output Utilization
+  # Verifies tool_result outputs are consumed by a downstream step.
+  tool_output_utilization:
+    enabled: true
+
+  # Rule q — LLM Response Utilization
+  # Verifies llm_response outputs are consumed by a downstream step.
+  llm_response_utilization:
+    enabled: true
+
 per_step_rules: {}
 

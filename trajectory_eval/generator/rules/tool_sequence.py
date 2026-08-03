@@ -28,6 +28,7 @@ from trajectory_eval.models.rule import (
 )
 from trajectory_eval.models.trajectory import StepType, Trajectory
 from trajectory_eval.generator.rules._helpers import (
+    failed_step_indices,
     next_tool_call,
     preceding_tool_call,
 )
@@ -94,49 +95,6 @@ def _compute_confidence(
 # ---------------------------------------------------------------------------
 # Data-flow cross-reference
 # ---------------------------------------------------------------------------
-
-
-def _check_data_dependency(
-    tool_a: str,
-    tool_b: str,
-    data_dependency_rules: list,
-) -> bool:
-    """Check if tool_b uses a parameter originating from tool_a's output.
-
-    Cross-references existing DataDependencyRule instances to determine
-    whether a data-flow link exists between the two tools.
-
-    Args:
-        tool_a: Source tool name.
-        tool_b: Consuming tool name.
-        data_dependency_rules: List of DataDependencyRule instances already
-            generated for this trajectory.
-
-    Returns:
-        True if any DataDependencyRule shows tool_b consuming a value
-        that originated from tool_a.
-    """
-    # Import here to avoid circular imports at module level
-    from trajectory_eval.generator.rules.data_dependency import DataDependencyRule
-
-    for rule in data_dependency_rules:
-        if not isinstance(rule, DataDependencyRule):
-            continue
-        # rule.tool_name is the consuming tool (tool_b candidate)
-        # We need to check if the source step belongs to tool_a.
-        # DataDependencyRule stores source_step (int), not source tool name
-        # directly. We check if the rule's consuming tool matches tool_b
-        # and if there's any indication the source is tool_a.
-        # Since DataDependencyRule doesn't store source_tool_name directly,
-        # we use a heuristic: if the consuming tool matches tool_b and the
-        # rule was generated, we check the trajectory steps for the source.
-        if rule.tool_name == tool_b:
-            # The source_step field indicates where the value came from.
-            # We need to check the trajectory to confirm the source is tool_a.
-            # This is handled via the _source_tool_map passed in.
-            pass
-
-    return False
 
 
 def _check_data_dependency_with_steps(
@@ -339,6 +297,10 @@ class ToolSequenceRule(HardRule):
         # Phase 1: Collect all A→B pairs
         pairs: dict[tuple[str, str], list[_PairObservation]] = defaultdict(list)
 
+        # Identify tool_result steps that are structurally failed (followed
+        # by a StepType.error step).
+        structurally_failed = failed_step_indices(steps)
+
         for result in steps:
             if result.step_type != StepType.tool_result:
                 continue
@@ -350,11 +312,12 @@ class ToolSequenceRule(HardRule):
             tool_a = a_call.tool_name or ""
             tool_b = b_call.tool_name or ""
 
-            # Determine if A succeeded (tool_result doesn't contain failure)
-            output = (result.tool_output or "").lower()
-            a_succeeded = not any(
-                kw in output for kw in ("error", "exception", "failed", "traceback")
-            )
+            # A tool_result is only classified as a failure when there is
+            # structural evidence: an adjacent StepType.error step.  Naive
+            # keyword matching (e.g. "error" in output) produces false
+            # positives when outputs incidentally contain those words in
+            # file paths, source code, or documentation text.
+            a_succeeded = result.index not in structurally_failed
 
             pairs[(tool_a, tool_b)].append(
                 _PairObservation(

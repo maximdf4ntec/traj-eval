@@ -11,8 +11,10 @@ from __future__ import annotations
 from typing import Any
 
 from trajectory_eval.generator.rules.cycle_breaker import CycleBreakRule
+from trajectory_eval.generator.rules.latency_budget import LatencyBudgetRule
 from trajectory_eval.generator.rules.monotonic_progress import MonotonicProgressRule
 from trajectory_eval.generator.rules.redundancy_rate import RedundancyRateRule
+from trajectory_eval.generator.rules.token_budget import TokenBudgetRule
 from trajectory_eval.generator.rules.token_efficiency import TokenEfficiencyRule
 from trajectory_eval.models.execution_report import (
     ExecutionReport,
@@ -28,6 +30,8 @@ _CATEGORY_MAP: dict[type, str] = {
     TokenEfficiencyRule: "efficiency",
     MonotonicProgressRule: "progress",
     CycleBreakRule: "efficiency",
+    TokenBudgetRule: "performance",
+    LatencyBudgetRule: "performance",
 }
 
 
@@ -64,6 +68,23 @@ def _extract_observation(rule: HardRule) -> dict[str, Any]:
             "prior_step": rule.prior_step,
             "repeated_tool_name": rule.repeated_tool_name,
             "horizon": rule.horizon,
+            "repetition_count": rule.repetition_count,
+        }
+    if isinstance(rule, TokenBudgetRule):
+        return {
+            "step_index": rule.step_index,
+            "step_type": rule.step_type.value if rule.step_type else None,
+            "observed_tokens": rule.observed_tokens,
+            "threshold_tokens": rule.threshold_tokens,
+            "token_budget_pct": rule.token_budget_pct,
+        }
+    if isinstance(rule, LatencyBudgetRule):
+        return {
+            "step_index": rule.step_index,
+            "step_type": rule.step_type.value if rule.step_type else None,
+            "observed_latency_ms": rule.observed_latency_ms,
+            "threshold_latency_ms": rule.threshold_latency_ms,
+            "latency_budget_pct": rule.latency_budget_pct,
         }
     # Fallback: dump all non-base fields via model_dump, excluding inherited
     # Rule fields so we get only the rule-specific payload.

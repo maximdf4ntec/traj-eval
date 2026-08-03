@@ -286,7 +286,7 @@ class TestFromTrajectory:
 
     def test_skips_inconsistent_ordering(self):
         """Req 9.9: Inconsistent pattern → no rules emitted."""
-        # All observations have A failing → inconsistent (no positive signal)
+        # All observations have A failing (error step follows) → inconsistent
         steps = [
             _make_step(0, StepType.tool_call, tool=_tool("tool_a", x=1)),
             _make_step(
@@ -294,14 +294,16 @@ class TestFromTrajectory:
                 StepType.tool_result,
                 tool=Tool(name="tool_a", output="error: something failed"),
             ),
-            _make_step(2, StepType.tool_call, tool=_tool("tool_b", y=2)),
-            _make_step(3, StepType.tool_call, tool=_tool("tool_a", x=1)),
+            _make_step(2, StepType.error),
+            _make_step(3, StepType.tool_call, tool=_tool("tool_b", y=2)),
+            _make_step(4, StepType.tool_call, tool=_tool("tool_a", x=1)),
             _make_step(
-                4,
+                5,
                 StepType.tool_result,
                 tool=Tool(name="tool_a", output="exception occurred"),
             ),
-            _make_step(5, StepType.tool_call, tool=_tool("tool_b", y=2)),
+            _make_step(6, StepType.error),
+            _make_step(7, StepType.tool_call, tool=_tool("tool_b", y=2)),
         ]
         trajectory = Trajectory(id="test", steps=steps)
         rules = ToolSequenceRule.from_trajectory(
@@ -345,7 +347,7 @@ class TestFromTrajectory:
                     _make_step(base + 2, StepType.tool_call, tool=_tool("b", y=2)),
                 ]
             )
-        # 1 failure observation (A fails → B still follows)
+        # 1 failure observation (A fails → error step → B still follows)
         base = 9
         steps.extend(
             [
@@ -355,7 +357,8 @@ class TestFromTrajectory:
                     StepType.tool_result,
                     tool=Tool(name="a", output="error: failed"),
                 ),
-                _make_step(base + 2, StepType.tool_call, tool=_tool("b", y=2)),
+                _make_step(base + 2, StepType.error),
+                _make_step(base + 3, StepType.tool_call, tool=_tool("b", y=2)),
             ]
         )
         trajectory = Trajectory(id="test", steps=steps)

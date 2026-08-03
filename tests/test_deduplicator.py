@@ -170,14 +170,20 @@ class TestRuleDeduplicator:
                 category=RuleCategory.provenance,
                 kind="data_lineage",
                 constraint={
-                    "must_originate_from": {"tool": "read_file", "output_field": "path"}
+                    "must_originate_from": {
+                        "tool": "read_file",
+                        "output_field": "__OUTPUT__",
+                    }
                 },
             ),
             _make_rule(
                 category=RuleCategory.provenance,
                 kind="data_lineage",
                 constraint={
-                    "must_originate_from": {"tool": "read_file", "output_field": "path"}
+                    "must_originate_from": {
+                        "tool": "read_file",
+                        "output_field": "__OUTPUT__",
+                    }
                 },
             ),
         ]

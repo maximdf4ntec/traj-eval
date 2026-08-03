@@ -138,6 +138,7 @@ class TestCycleBreakConversion:
             prior_step=5,
             repeated_tool_name="read_file",
             horizon=5,
+            repetition_count=3,
         )
         report = builder.build(metrics_rules=[rule], flags=[])
         assert len(report.metrics) == 1
@@ -149,6 +150,7 @@ class TestCycleBreakConversion:
             "prior_step": 5,
             "repeated_tool_name": "read_file",
             "horizon": 5,
+            "repetition_count": 3,
         }
 
 

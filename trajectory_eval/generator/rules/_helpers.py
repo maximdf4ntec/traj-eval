@@ -16,6 +16,11 @@ from trajectory_eval.models.trajectory import Step, StepType
 def is_failed_step(step: Step, failure_keywords: frozenset[str]) -> bool:
     """Return True when a tool_result output contains failure indicators.
 
+    .. deprecated::
+        This function uses naive keyword substring matching which produces
+        false positives. Use :func:`failed_step_indices` for structural
+        failure detection based on adjacent StepType.error steps.
+
     Args:
         step: Any step; non-tool_result steps always return False.
         failure_keywords: Lowercase keyword strings that signal failure.
@@ -27,6 +32,31 @@ def is_failed_step(step: Step, failure_keywords: frozenset[str]) -> bool:
         return False
     output = (step.tool_output or "").lower()
     return any(kw in output for kw in failure_keywords)
+
+
+def failed_step_indices(steps: list[Step]) -> set[int]:
+    """Return indices of tool_result steps that are structurally failed.
+
+    A tool_result is considered failed when a StepType.error step follows it
+    (scanning backwards from the error to the nearest preceding tool_result).
+    This avoids false positives from naive keyword matching on output text.
+
+    Args:
+        steps: Ordered list of all trajectory steps.
+
+    Returns:
+        Set of step indices (tool_result steps) that are structurally failed.
+    """
+    failed: set[int] = set()
+    for i, step in enumerate(steps):
+        if step.step_type != StepType.error:
+            continue
+        # Walk backwards to find the nearest preceding tool_result.
+        for prev in reversed(steps[:i]):
+            if prev.step_type == StepType.tool_result:
+                failed.add(prev.index)
+                break
+    return failed
 
 
 def is_empty_step(step: Step) -> bool:

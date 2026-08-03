@@ -21,6 +21,7 @@ from pydantic import model_validator
 from trajectory_eval.generator.utils.fact_normalizer import (
     calculate_confidence,
     extract_facts,
+    extract_trackable_values,
     normalize_value,
     is_candidate_value,
 )
@@ -40,6 +41,9 @@ from trajectory_eval.models.trajectory import (
     Step,
     StepType,
     Trajectory,
+)
+from trajectory_eval.generator.rules._helpers import (
+    preceding_tool_call as _preceding_tool_call,
 )
 
 ELIGIBLE_TYPES: frozenset[ParameterType] = frozenset(
@@ -298,11 +302,8 @@ class DataDependencyRule(HardRule):
 
                 # Resolve source tool name from the tool_call preceding
                 # the source tool_result.
-                source_tool = ""
-                for s in reversed(steps):
-                    if s.index < origin_step and s.step_type == StepType.tool_call:
-                        source_tool = s.tool_name or ""
-                        break
+                prev_call = _preceding_tool_call(steps, origin_step)
+                source_tool = prev_call.tool_name or "" if prev_call else ""
 
                 # Skip self-referential lineage (same tool consuming its own
                 # output) — not useful as a provenance invariant.
@@ -335,28 +336,13 @@ class DataDependencyRule(HardRule):
     def _extract_trackable_values(value: Any) -> list[str]:
         """Extract individual trackable values from a parameter.
 
-        For plain short values, returns the normalized value.
-        For strings that contain file paths, extracts those paths.
+        Delegates to the shared :func:`extract_trackable_values` utility
+        in fact_normalizer for consistency with ToolOutputUtilizationRule.
         """
-        import re
-
         normalized = normalize_value(value)
         if not normalized:
             return []
-
-        results: list[str] = []
-
-        # Extract file paths (absolute Unix paths).
-        path_pattern = re.compile(r"/[a-zA-Z0-9_./-]+\.[a-zA-Z]{1,10}")
-        paths = path_pattern.findall(normalized)
-        if paths:
-            results.extend(paths)
-
-        # If no paths found and value is short enough, use as-is.
-        if not results and len(normalized) <= 200:
-            results.append(normalized)
-
-        return results
+        return extract_trackable_values(normalized)
 
     @staticmethod
     def _find_first_origin(

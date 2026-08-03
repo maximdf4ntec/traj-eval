@@ -33,3 +33,15 @@ wheels/
 # OS
 .DS_Store
 Thumbs.db
+
+# Hypothesis testing database
+.hypothesis/
+
+# Transient output/error files
+err_log.txt
+err.txt
+eval_err.txt
+output.json
+test_michael.json
+out_with_rules.json
+cov_annotate/

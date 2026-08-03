@@ -35,13 +35,17 @@ from trajectory_eval.generator.rule_runner import HardRuleRunner
 from trajectory_eval.generator.rules import (
     CycleBreakRule,
     DataDependencyRule,
+    LatencyBudgetRule,
     LlmGroundingRule,
     LlmResponseFormatRule,
+    LlmResponseUtilizationRule,
     MonotonicProgressRule,
     MutationMatcherRule,
     RedundancyRateRule,
     TerminalStateRule,
+    TokenBudgetRule,
     TokenEfficiencyRule,
+    ToolOutputUtilizationRule,
     ToolParamCountRule,
     ToolParamTypeRule,
     ToolResultTypeRule,
@@ -85,11 +89,17 @@ _CLASSIFICATION: dict[type, _RuleArtifact] = {
     LlmGroundingRule: _RuleArtifact.contract,
     TerminalStateRule: _RuleArtifact.contract,
     MutationMatcherRule: _RuleArtifact.contract,
+    # Utilization rules (contract)
+    ToolOutputUtilizationRule: _RuleArtifact.contract,
+    LlmResponseUtilizationRule: _RuleArtifact.contract,
     # Metrics rules (report only)
     RedundancyRateRule: _RuleArtifact.report,
     TokenEfficiencyRule: _RuleArtifact.report,
     MonotonicProgressRule: _RuleArtifact.report,
     CycleBreakRule: _RuleArtifact.report,
+    # Budget rules (report only)
+    TokenBudgetRule: _RuleArtifact.report,
+    LatencyBudgetRule: _RuleArtifact.report,
 }
 
 

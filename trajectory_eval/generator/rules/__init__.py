@@ -14,6 +14,12 @@ Trajectory-level rules (a–g):
 Per-step rules (h):
     ToolParamCountRule      — Rule h (count)
     ToolParamTypeRule       — Rule h (type)
+
+Performance rules:
+    TokenBudgetRule             — Per-step token budget enforcement
+    LatencyBudgetRule           — Per-step latency budget enforcement
+    ToolOutputUtilizationRule   — Tool output consumption verification
+    LlmResponseUtilizationRule  — LLM response consumption verification
 """
 
 from trajectory_eval.generator.rules.redundancy_rate import RedundancyRateRule
@@ -31,6 +37,14 @@ from trajectory_eval.generator.rules.terminal_state import TerminalStateRule
 from trajectory_eval.generator.rules.tool_result_type import ToolResultTypeRule
 from trajectory_eval.generator.rules.llm_format import LlmResponseFormatRule
 from trajectory_eval.generator.rules.llm_grounding import LlmGroundingRule
+from trajectory_eval.generator.rules.token_budget import TokenBudgetRule
+from trajectory_eval.generator.rules.latency_budget import LatencyBudgetRule
+from trajectory_eval.generator.rules.tool_output_utilization import (
+    ToolOutputUtilizationRule,
+)
+from trajectory_eval.generator.rules.llm_response_utilization import (
+    LlmResponseUtilizationRule,
+)
 
 __all__ = [
     "RedundancyRateRule",
@@ -46,4 +60,8 @@ __all__ = [
     "ToolResultTypeRule",
     "LlmResponseFormatRule",
     "LlmGroundingRule",
+    "TokenBudgetRule",
+    "LatencyBudgetRule",
+    "ToolOutputUtilizationRule",
+    "LlmResponseUtilizationRule",
 ]
