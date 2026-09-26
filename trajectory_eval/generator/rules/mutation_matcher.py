@@ -7,7 +7,6 @@ same tool and inputs violates this rule (no adaptation observed).
 
 from __future__ import annotations
 
-import json
 from typing import Optional
 
 from pydantic import model_validator
@@ -24,6 +23,7 @@ from trajectory_eval.generator.rules._helpers import (
     is_empty_step,
     next_tool_call,
     preceding_tool_call,
+    tool_call_signature,
 )
 
 _DEFAULT_FAILURE_KEYWORDS: frozenset[str] = frozenset(
@@ -139,19 +139,8 @@ class MutationMatcherRule(HardRule):
             if call_before is None or call_after is None:
                 continue
 
-            before_sig = (
-                json.dumps(call_before.tool_input, sort_keys=True)
-                if call_before.tool_input
-                else "null"
-            )
-            after_sig = (
-                json.dumps(call_after.tool_input, sort_keys=True)
-                if call_after.tool_input
-                else "null"
-            )
-            identical = (
-                call_before.tool_name == call_after.tool_name
-                and before_sig == after_sig
+            identical = tool_call_signature(call_before) == tool_call_signature(
+                call_after
             )
 
             rules.append(

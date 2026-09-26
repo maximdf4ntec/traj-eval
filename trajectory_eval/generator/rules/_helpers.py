@@ -127,11 +127,24 @@ def next_tool_call(steps: list[Step], after_index: int) -> Optional[Step]:
 def tool_call_signature(step: Step) -> tuple[str, str]:
     """Return a hashable (tool_name, serialised_input) signature for a tool_call step.
 
+    Reads directly from ``step.tool`` rather than the backward-compat shim
+    properties, so the signature is based on the typed ``ToolParameter``
+    representation (``key`` + ``raw_value`` pairs) rather than a
+    reconstructed plain dict.  Falls back to empty strings when ``step.tool``
+    is ``None`` (e.g. a non-tool_call step passed by mistake).
+
     Args:
         step: A tool_call Step.
 
     Returns:
-        A 2-tuple of (tool_name, json_input).
+        A 2-tuple of ``(tool_name, json_inputs)`` where ``json_inputs`` is a
+        deterministic JSON serialization of the sorted input parameters.
     """
-    sig = json.dumps(step.tool_input, sort_keys=True) if step.tool_input else "null"
-    return (step.tool_name or "", sig)
+    if step.tool is None:
+        return ("", "null")
+    inputs_repr = sorted(
+        [{"key": p.key, "raw_value": p.raw_value} for p in step.tool.inputs],
+        key=lambda d: d["key"],
+    )
+    sig = json.dumps(inputs_repr, sort_keys=True, default=str)
+    return (step.tool.name, sig)
