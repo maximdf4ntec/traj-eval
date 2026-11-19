@@ -51,7 +51,7 @@ from trajectory_eval.generator.rules import (
     ToolResultTypeRule,
     ToolSequenceRule,
 )
-from trajectory_eval.llm.azure_client import AzureFoundryClient
+from trajectory_eval.llm.llm_client import LLMClient
 from trajectory_eval.models.contract import (
     BehaviorContract,
     CompiledRule,
@@ -148,15 +148,15 @@ class ContractCompiler:
     async def compile(
         self,
         trajectory: Trajectory,
-        embed_client: Optional[AzureFoundryClient] = None,
+        embed_client: Optional[LLMClient] = None,
     ) -> CompilerOutput:
         """Compile a trajectory into a Behavior Contract and Execution Report.
 
         Args:
             trajectory: The full trajectory to analyse.
-            embed_client: Optional Azure Foundry client for rules that require
-                embedding (e.g. MonotonicProgressRule). Rules needing this
-                client are silently skipped when ``None``.
+            embed_client: Optional client for rules that require embedding
+                (e.g. MonotonicProgressRule). Rules needing this client are
+                silently skipped when ``None``.
 
         Returns:
             A :class:`CompilerOutput` containing both output artifacts.

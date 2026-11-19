@@ -9,8 +9,6 @@ description = "Trajectory evaluation system for LLM agent behavior contracts"
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.0",
-    "openai>=1.0.0",
-    "python-dotenv>=1.0.0",
     "pyyaml>=6.0",
 ]
 

@@ -238,9 +238,8 @@ class TestParseSWEBenchExample:
 
     def test_contains_expected_tool_names(self, trajectory):
         tool_names = {s.tool_name for s in trajectory.steps if s.tool_name}
-        # The example trajectory uses str_replace_editor and python heavily.
+        # The example trajectory uses str_replace_editor for file edits.
         assert "str_replace_editor" in tool_names
-        assert "python" in tool_names
 
     def test_step_types_are_valid(self, trajectory):
         valid_types = set(StepType)

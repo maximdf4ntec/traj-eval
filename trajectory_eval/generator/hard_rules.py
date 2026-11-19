@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from trajectory_eval.llm.azure_client import AzureFoundryClient
+from trajectory_eval.llm.llm_client import LLMClient
 from trajectory_eval.models.rule import HardRule
 from trajectory_eval.generator.rule_runner import HardRuleRunner
 
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 async def generate_global_hard_rules(
     trajectory: "Trajectory",
-    embed_client: Optional[AzureFoundryClient] = None,
+    embed_client: Optional[LLMClient] = None,
     config_path: Optional[Path] = None,
 ) -> list[HardRule]:
     """Generate all trajectory-level hard rules (a through g).
@@ -39,7 +39,7 @@ async def generate_global_hard_rules(
 
     Args:
         trajectory: The full trajectory to analyse.
-        embed_client: Optional Azure Foundry client for Rule b (embedding).
+        embed_client: Optional client for Rule b (embedding).
             Rule b is silently skipped when None.
         config_path: Override path for the YAML threshold configuration.
             Falls back to the bundled ``hard_rules_config.yaml`` when None.
@@ -53,7 +53,7 @@ async def generate_global_hard_rules(
 
 async def compile_contract(
     trajectory: "Trajectory",
-    embed_client: Optional[AzureFoundryClient] = None,
+    embed_client: Optional[LLMClient] = None,
     config_path: Optional[Path] = None,
 ) -> "CompilerOutput":
     """Compile a trajectory into a Behavior Contract and Execution Report.
@@ -62,7 +62,7 @@ async def compile_contract(
 
     Args:
         trajectory: The full trajectory to compile.
-        embed_client: Optional Azure Foundry client for embedding-based rules.
+        embed_client: Optional client for embedding-based rules.
         config_path: Override path for the YAML config. Falls back to bundled default.
 
     Returns:

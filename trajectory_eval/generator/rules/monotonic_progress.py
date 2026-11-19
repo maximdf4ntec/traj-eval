@@ -5,9 +5,9 @@ For every llm_response step N, the response is compared against the prior
 signals that the agent is spending tokens without producing novel output
 (stagnation / idling).
 
-Embedding calls are delegated to the AzureFoundryClient.  If the client is
-None or the call fails, all Rule-b instances are silently skipped so the
-pipeline never crashes.
+Embedding calls are delegated to the LLMClient.  If the client is None or
+the call fails, all Rule-b instances are silently skipped so the pipeline
+never crashes.
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ class MonotonicProgressRule(HardRule):
 
         Args:
             trajectory: The full trajectory to analyse.
-            embed_client: AzureFoundryClient instance used for embedding.
+            embed_client: LLMClient instance used for embedding.
                 Rule b is silently skipped when None.
             stagnation_threshold: Cosine similarity >= this signals stagnation.
             prior_steps_window: Number of preceding llm_response steps to compare.

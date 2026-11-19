@@ -16,14 +16,9 @@ A JSON object printed to stdout containing both artifacts:
 The contract contains step-agnostic, deduplicated invariants.
 The report contains metrics observations and inconsistency flags.
 
-Environment variables (all optional — LLM calls are skipped gracefully on failure)
------------------------------------------------------------------------------------
-    AZURE_FOUNDRY_ENDPOINT   Base URL for Azure AI Foundry, e.g.
-                             https://<resource>.services.ai.azure.com/models
-    AZURE_FOUNDRY_KEY        API key / Bearer token.
-    AZURE_FOUNDRY_MODEL      Model name (default: DeepSeek-V4-0).
-    TOOL_CONTEXT_WINDOW      Preceding steps included in tool-pair LLM prompt
-                             (default: 3).
+No network connection or API keys are required.  All analysis is performed
+locally.  The ``TOOL_CONTEXT_WINDOW`` environment variable (default: 3) is
+no longer used but is harmless if set.
 """
 
 # TODO
@@ -61,15 +56,10 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from typing import Optional
-
-from dotenv import load_dotenv
-
-load_dotenv()
 
 from trajectory_eval.generator.hard_rules import compile_contract
-from trajectory_eval.llm.azure_client import AzureFoundryClient
-from trajectory_eval.models.trajectory import Step, StepType, Trajectory
+from trajectory_eval.llm.llm_client import LLMClient
+from trajectory_eval.models.trajectory import StepType, Trajectory
 from trajectory_eval.parsers.swe_bench import parse_swe_bench
 from trajectory_eval.parsers.langfuse import parse_langfuse
 
@@ -170,16 +160,6 @@ def _auto_parse(traj_path: str) -> Trajectory:
     return parse_swe_bench(traj_path)
 
 
-def _find_preceding_tool_call(
-    trajectory: Trajectory, tool_result_index: int
-) -> Optional[Step]:
-    """Return the tool_call step immediately before *tool_result_index*, or None."""
-    for step in reversed(trajectory.steps):
-        if step.index < tool_result_index and step.step_type == StepType.tool_call:
-            return step
-    return None
-
-
 async def evaluate(traj_path: str) -> dict:
     """Parse the trajectory and compile the behavior contract + execution report.
 
@@ -197,10 +177,10 @@ async def evaluate(traj_path: str) -> dict:
     # Print formatted trajectory for inspection.
     print(_format_trajectory(trajectory), file=sys.stderr)
 
-    llm_client = AzureFoundryClient()
+    embed_client = LLMClient()
 
     # Compile trajectory into BehaviorContract + ExecutionReport.
-    output = await compile_contract(trajectory, embed_client=llm_client)
+    output = await compile_contract(trajectory, embed_client=embed_client)
 
     return {
         "contract": output.contract.model_dump(mode="json", exclude_none=True),

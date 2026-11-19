@@ -31,7 +31,7 @@ from typing import Optional
 
 import yaml
 
-from trajectory_eval.llm.azure_client import AzureFoundryClient
+from trajectory_eval.llm.llm_client import LLMClient
 from trajectory_eval.models.rule import HardRule
 from trajectory_eval.models.trajectory import Trajectory
 from trajectory_eval.generator.rules import (
@@ -101,13 +101,13 @@ class HardRuleRunner:
     async def run(
         self,
         trajectory: Trajectory,
-        embed_client: Optional[AzureFoundryClient] = None,
+        embed_client: Optional[LLMClient] = None,
     ) -> list[HardRule]:
         """Generate all enabled trajectory-level hard rules.
 
         Args:
             trajectory: The full trajectory to analyse.
-            embed_client: Optional Azure Foundry client for Rule b (embedding).
+            embed_client: Optional client for Rule b (embedding).
                 Rule b is silently skipped when None.
 
         Returns:
